@@ -22,19 +22,14 @@ import (
 	metricapi "github.com/kubernetes/dashboard/src/app/backend/integration/metric/api"
 )
 
-// GenericDataCell describes the interface of the data cell that contains all the necessary methods needed to perform
-// complex data selection
-// GenericDataSelect takes a list of these interfaces and performs selection operation.
-// Therefore as long as the list is composed of GenericDataCells you can perform any data selection!
-type DataCell interface {
-	// GetPropertyAtIndex returns the property of this data cell.
-	// Value returned has to have Compare method which is required by Sort functionality of DataSelect.
+// DataCell is a generic interface for data cells that can be selected and sorted.
+type DataCell[T any] interface {
 	GetProperty(PropertyName) ComparableValue
 }
 
 // MetricDataCell extends interface of DataCells and additionally supports metric download.
-type MetricDataCell interface {
-	DataCell
+type MetricDataCell[T any] interface {
+	DataCell[T]
 	// GetResourceSelector returns ResourceSelector for this resource. The ResourceSelector can be used to get,
 	// HeapsterSelector which in turn can be used to download metrics.
 	GetResourceSelector() *metricapi.ResourceSelector
@@ -48,12 +43,10 @@ type ComparableValue interface {
 	Contains(ComparableValue) bool
 }
 
-// SelectableData contains all the required data to perform data selection.
-// It implements sort.Interface so its sortable under sort.Sort
-// You can use its Select method to get selected GenericDataCell list.
-type DataSelector struct {
+// DataSelector is a generic struct for selecting, sorting, and paginating data.
+type DataSelector[T any] struct {
 	// GenericDataList hold generic data cells that are being selected.
-	GenericDataList []DataCell
+	GenericDataList []DataCell[T]
 	// DataSelectQuery holds instructions for data select.
 	DataSelectQuery *DataSelectQuery
 	// CachedResources stores resources that may be needed during data selection process
@@ -70,15 +63,15 @@ type DataSelector struct {
 // Implementation of sort.Interface so that we can use built-in sort function (sort.Sort) for sorting SelectableData
 
 // Len returns the length of data inside SelectableData.
-func (self DataSelector) Len() int { return len(self.GenericDataList) }
+func (self DataSelector[T]) Len() int { return len(self.GenericDataList) }
 
 // Swap swaps 2 indices inside SelectableData.
-func (self DataSelector) Swap(i, j int) {
+func (self DataSelector[T]) Swap(i, j int) {
 	self.GenericDataList[i], self.GenericDataList[j] = self.GenericDataList[j], self.GenericDataList[i]
 }
 
 // Less compares 2 indices inside SelectableData and returns true if first index is larger.
-func (self DataSelector) Less(i, j int) bool {
+func (self DataSelector[T]) Less(i, j int) bool {
 	for _, sortBy := range self.DataSelectQuery.SortQuery.SortByList {
 		a := self.GenericDataList[i].GetProperty(sortBy.Property)
 		b := self.GenericDataList[j].GetProperty(sortBy.Property)
@@ -97,14 +90,14 @@ func (self DataSelector) Less(i, j int) bool {
 }
 
 // Sort sorts the data inside as instructed by DataSelectQuery and returns itself to allow method chaining.
-func (self *DataSelector) Sort() *DataSelector {
-	sort.Sort(*self)
+func (self *DataSelector[T]) Sort() *DataSelector[T] {
+	sort.Sort(self)
 	return self
 }
 
 // Filter the data inside as instructed by DataSelectQuery and returns itself to allow method chaining.
-func (self *DataSelector) Filter() *DataSelector {
-	filteredList := []DataCell{}
+func (self *DataSelector[T]) Filter() *DataSelector[T] {
+	filteredList := []DataCell[T]{}
 
 	for _, c := range self.GenericDataList {
 		matches := true
@@ -124,7 +117,7 @@ func (self *DataSelector) Filter() *DataSelector {
 	return self
 }
 
-func (self *DataSelector) getMetrics(metricClient metricapi.MetricClient) (
+func (self *DataSelector[T]) getMetrics(metricClient metricapi.MetricClient) (
 	[]metricapi.MetricPromises, error) {
 	metricPromises := make([]metricapi.MetricPromises, 0)
 
@@ -140,7 +133,7 @@ func (self *DataSelector) getMetrics(metricClient metricapi.MetricClient) (
 	selectors := make([]metricapi.ResourceSelector, len(self.GenericDataList))
 	for i, dataCell := range self.GenericDataList {
 		// make sure data cells support metrics
-		metricDataCell, ok := dataCell.(MetricDataCell)
+		metricDataCell, ok := dataCell.(MetricDataCell[T])
 		if !ok {
 			log.Printf("Data cell does not implement MetricDataCell. Skipping. %v", dataCell)
 			continue
@@ -159,7 +152,7 @@ func (self *DataSelector) getMetrics(metricClient metricapi.MetricClient) (
 
 // GetMetrics downloads metrics for data cells currently present in self.GenericDataList as instructed
 // by MetricQuery and inserts resulting MetricPromises to self.MetricsPromises.
-func (self *DataSelector) GetMetrics(metricClient metricapi.MetricClient) *DataSelector {
+func (self *DataSelector[T]) GetMetrics(metricClient metricapi.MetricClient) *DataSelector[T] {
 	metricPromisesList, err := self.getMetrics(metricClient)
 	if err != nil {
 		log.Print(err)
@@ -177,7 +170,7 @@ func (self *DataSelector) GetMetrics(metricClient metricapi.MetricClient) *DataS
 
 // GetCumulativeMetrics downloads and aggregates metrics for data cells currently present in self.GenericDataList as instructed
 // by MetricQuery and inserts resulting MetricPromises to self.CumulativeMetricsPromises.
-func (self *DataSelector) GetCumulativeMetrics(metricClient metricapi.MetricClient) *DataSelector {
+func (self *DataSelector[T]) GetCumulativeMetrics(metricClient metricapi.MetricClient) *DataSelector[T] {
 	metricPromisesList, err := self.getMetrics(metricClient)
 	if err != nil {
 		log.Print(err)
@@ -206,7 +199,7 @@ func (self *DataSelector) GetCumulativeMetrics(metricClient metricapi.MetricClie
 }
 
 // Paginates the data inside as instructed by DataSelectQuery and returns itself to allow method chaining.
-func (self *DataSelector) Paginate() *DataSelector {
+func (self *DataSelector[T]) Paginate() *DataSelector[T] {
 	pQuery := self.DataSelectQuery.PaginationQuery
 	dataList := self.GenericDataList
 	startIndex, endIndex := pQuery.GetPaginationSettings(len(dataList))
@@ -217,7 +210,7 @@ func (self *DataSelector) Paginate() *DataSelector {
 	}
 	// Return no items if requested page does not exist
 	if !pQuery.IsPageAvailable(len(self.GenericDataList), startIndex) {
-		self.GenericDataList = []DataCell{}
+		self.GenericDataList = []DataCell[T]{}
 		return self
 	}
 
@@ -226,8 +219,8 @@ func (self *DataSelector) Paginate() *DataSelector {
 }
 
 // GenericDataSelect takes a list of GenericDataCells and DataSelectQuery and returns selected data as instructed by dsQuery.
-func GenericDataSelect(dataList []DataCell, dsQuery *DataSelectQuery) []DataCell {
-	SelectableData := DataSelector{
+func GenericDataSelect[T any](dataList []DataCell[T], dsQuery *DataSelectQuery) []DataCell[T] {
+	SelectableData := DataSelector[T]{
 		GenericDataList: dataList,
 		DataSelectQuery: dsQuery,
 	}
@@ -235,8 +228,8 @@ func GenericDataSelect(dataList []DataCell, dsQuery *DataSelectQuery) []DataCell
 }
 
 // GenericDataSelectWithFilter takes a list of GenericDataCells and DataSelectQuery and returns selected data as instructed by dsQuery.
-func GenericDataSelectWithFilter(dataList []DataCell, dsQuery *DataSelectQuery) ([]DataCell, int) {
-	SelectableData := DataSelector{
+func GenericDataSelectWithFilter[T any](dataList []DataCell[T], dsQuery *DataSelectQuery) ([]DataCell[T], int) {
+	SelectableData := DataSelector[T]{
 		GenericDataList: dataList,
 		DataSelectQuery: dsQuery,
 	}
@@ -248,10 +241,10 @@ func GenericDataSelectWithFilter(dataList []DataCell, dsQuery *DataSelectQuery) 
 }
 
 // GenericDataSelect takes a list of GenericDataCells and DataSelectQuery and returns selected data as instructed by dsQuery.
-func GenericDataSelectWithMetrics(dataList []DataCell, dsQuery *DataSelectQuery,
+func GenericDataSelectWithMetrics[T any](dataList []DataCell[T], dsQuery *DataSelectQuery,
 	cachedResources *metricapi.CachedResources, metricClient metricapi.MetricClient) (
-	[]DataCell, metricapi.MetricPromises) {
-	SelectableData := DataSelector{
+	[]DataCell[T], metricapi.MetricPromises) {
+	SelectableData := DataSelector[T]{
 		GenericDataList: dataList,
 		DataSelectQuery: dsQuery,
 		CachedResources: cachedResources,
@@ -262,10 +255,10 @@ func GenericDataSelectWithMetrics(dataList []DataCell, dsQuery *DataSelectQuery,
 }
 
 // GenericDataSelect takes a list of GenericDataCells and DataSelectQuery and returns selected data as instructed by dsQuery.
-func GenericDataSelectWithFilterAndMetrics(dataList []DataCell, dsQuery *DataSelectQuery,
+func GenericDataSelectWithFilterAndMetrics[T any](dataList []DataCell[T], dsQuery *DataSelectQuery,
 	cachedResources *metricapi.CachedResources, metricClient metricapi.MetricClient) (
-	[]DataCell, metricapi.MetricPromises, int) {
-	SelectableData := DataSelector{
+	[]DataCell[T], metricapi.MetricPromises, int) {
+	SelectableData := DataSelector[T]{
 		GenericDataList: dataList,
 		DataSelectQuery: dsQuery,
 		CachedResources: cachedResources,
@@ -278,9 +271,9 @@ func GenericDataSelectWithFilterAndMetrics(dataList []DataCell, dsQuery *DataSel
 }
 
 // PodListMetrics returns metrics for every resource on the dataList without aggregating data.
-func PodListMetrics(dataList []DataCell, dsQuery *DataSelectQuery,
+func PodListMetrics[T any](dataList []DataCell[T], dsQuery *DataSelectQuery,
 	metricClient metricapi.MetricClient) metricapi.MetricPromises {
-	selectableData := DataSelector{
+	selectableData := DataSelector[T]{
 		GenericDataList: dataList,
 		DataSelectQuery: dsQuery,
 		CachedResources: metricapi.NoResourceCache,

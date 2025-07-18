@@ -37,8 +37,8 @@ func (self CustomResourceDefinitionCell) GetProperty(name dataselect.PropertyNam
 	}
 }
 
-func toCells(std []apiextensions.CustomResourceDefinition) []dataselect.DataCell {
-	cells := make([]dataselect.DataCell, len(std))
+func toCells(std []apiextensions.CustomResourceDefinition) []dataselect.DataCell[CustomResourceDefinitionCell] {
+	cells := make([]dataselect.DataCell[CustomResourceDefinitionCell], len(std))
 	for i := range std {
 		cells[i] = CustomResourceDefinitionCell(std[i])
 	}
@@ -46,7 +46,7 @@ func toCells(std []apiextensions.CustomResourceDefinition) []dataselect.DataCell
 	return cells
 }
 
-func fromCells(cells []dataselect.DataCell) []apiextensions.CustomResourceDefinition {
+func fromCells(cells []dataselect.DataCell[CustomResourceDefinitionCell]) []apiextensions.CustomResourceDefinition {
 	std := make([]apiextensions.CustomResourceDefinition, len(cells))
 	for i := range std {
 		std[i] = apiextensions.CustomResourceDefinition(cells[i].(CustomResourceDefinitionCell))
@@ -72,15 +72,15 @@ func (self CustomResourceObjectCell) GetProperty(name dataselect.PropertyName) d
 	}
 }
 
-func toObjectCells(std []types.CustomResourceObject) []dataselect.DataCell {
-	cells := make([]dataselect.DataCell, len(std))
+func toObjectCells(std []types.CustomResourceObject) []dataselect.DataCell[CustomResourceObjectCell] {
+	cells := make([]dataselect.DataCell[CustomResourceObjectCell], len(std))
 	for i := range std {
 		cells[i] = CustomResourceObjectCell(std[i])
 	}
 	return cells
 }
 
-func fromObjectCells(cells []dataselect.DataCell) []types.CustomResourceObject {
+func fromObjectCells(cells []dataselect.DataCell[CustomResourceObjectCell]) []types.CustomResourceObject {
 	std := make([]types.CustomResourceObject, len(cells))
 	for i := range std {
 		std[i] = types.CustomResourceObject(cells[i].(CustomResourceObjectCell))

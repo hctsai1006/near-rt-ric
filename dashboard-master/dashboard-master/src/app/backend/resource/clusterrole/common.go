@@ -36,15 +36,15 @@ func (self RoleCell) GetProperty(name dataselect.PropertyName) dataselect.Compar
 	}
 }
 
-func toCells(std []ClusterRole) []dataselect.DataCell {
-	cells := make([]dataselect.DataCell, len(std))
+func toCells(std []ClusterRole) []dataselect.DataCell[RoleCell] {
+	cells := make([]dataselect.DataCell[RoleCell], len(std))
 	for i := range std {
 		cells[i] = RoleCell(std[i])
 	}
 	return cells
 }
 
-func fromCells(cells []dataselect.DataCell) []ClusterRole {
+func fromCells(cells []dataselect.DataCell[RoleCell]) []ClusterRole {
 	std := make([]ClusterRole, len(cells))
 	for i := range std {
 		std[i] = ClusterRole(cells[i].(RoleCell))
