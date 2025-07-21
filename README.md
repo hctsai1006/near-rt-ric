@@ -5,7 +5,6 @@
 [![Security Scan](https://github.com/hctsai1006/near-rt-ric/actions/workflows/security-complete.yml/badge.svg)](https://github.com/hctsai1006/near-rt-ric/actions)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![O-RAN SC](https://img.shields.io/badge/O--RAN-Software%20Community-orange.svg)](https://o-ran-sc.org/)
-[![O-RAN Compliance](https://img.shields.io/badge/O--RAN-Release%203.0%20Compliant-green.svg)](https://www.o-ran.org/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.21%2B-blue.svg)](https://kubernetes.io/)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8.svg)](https://golang.org/)
 [![Angular Version](https://img.shields.io/badge/Angular-13.3.x-DD0031.svg)](https://angular.io/)
