@@ -45,3 +45,58 @@ Thumbs.db
 *.key
 *.mcp.json
 .mcp.json
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+coverage.out
+coverage.html
+*.coverprofile
+go.work
+
+# Build outputs
+build/
+release/
+bin/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files with secrets
+*secret*
+!*secret*.example.*
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Docker volumes
+docker/data/
+
+# Kubernetes generated files
+rendered-manifests.yaml
+
+# Helm generated files
+*.tgz
+charts/
+
+# Certificate files
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Benchmark results
+benchmark-results.txt
+
+# Performance test outputs
+perf/results/

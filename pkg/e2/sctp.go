@@ -11,8 +11,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// SCTPConnection represents a single SCTP connection to an E2 node
-type SCTPConnection struct {
+// SCTPClientConnection represents a single SCTP connection to an E2 node
+type SCTPClientConnection struct {
 	NodeID    string
 	Conn      net.Conn // Using net.Conn interface for compatibility
 	Address   string
@@ -25,7 +25,7 @@ type SCTPConnection struct {
 
 // SCTPManager handles SCTP connections for E2 interface according to O-RAN specifications
 type SCTPManager struct {
-	connections     map[string]*SCTPConnection
+	connections     map[string]*SCTPClientConnection
 	mutex           sync.RWMutex
 	logger          *logrus.Logger
 	listener        net.Listener
@@ -40,8 +40,8 @@ type SCTPManager struct {
 	keepaliveInterval time.Duration
 }
 
-// SCTPConfig contains configuration for SCTP manager
-type SCTPConfig struct {
+// SCTPClientConfig contains configuration for SCTP manager
+type SCTPClientConfig struct {
 	ListenAddress     string
 	ListenPort        int
 	ConnectTimeout    time.Duration
@@ -51,11 +51,11 @@ type SCTPConfig struct {
 }
 
 // NewSCTPManager creates a new O-RAN compliant SCTPManager
-func NewSCTPManager(config *SCTPConfig) *SCTPManager {
+func NewSCTPManager(config *SCTPClientConfig) *SCTPManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	return &SCTPManager{
-		connections:       make(map[string]*SCTPConnection),
+		connections:       make(map[string]*SCTPClientConnection),
 		logger:            logrus.WithField("component", "sctp-manager").Logger,
 		listenAddress:     config.ListenAddress,
 		listenPort:        config.ListenPort,
@@ -150,7 +150,7 @@ func (m *SCTPManager) Connect(nodeID, address string, port int) error {
 	}
 
 	// Create connection object
-	sctpConn := &SCTPConnection{
+	sctpConn := &SCTPClientConnection{
 		NodeID:    nodeID,
 		Conn:      conn,
 		Address:   address,
@@ -210,7 +210,7 @@ func (m *SCTPManager) SendToNode(nodeID string, data []byte) error {
 // BroadcastToAllNodes sends data to all connected E2 nodes
 func (m *SCTPManager) BroadcastToAllNodes(data []byte) []error {
 	m.mutex.RLock()
-	connections := make([]*SCTPConnection, 0, len(m.connections))
+	connections := make([]*SCTPClientConnection, 0, len(m.connections))
 	for _, conn := range m.connections {
 		if conn.Connected {
 			connections = append(connections, conn)
@@ -319,7 +319,7 @@ func (m *SCTPManager) handleIncomingConnection(conn net.Conn) {
 	// In a real implementation, this would be determined from the E2 Setup Request
 	nodeID := fmt.Sprintf("node_%s", remoteAddr)
 
-	sctpConn := &SCTPConnection{
+	sctpConn := &SCTPClientConnection{
 		NodeID:    nodeID,
 		Conn:      conn,
 		Address:   remoteAddr,
@@ -336,7 +336,7 @@ func (m *SCTPManager) handleIncomingConnection(conn net.Conn) {
 	m.handleConnection(sctpConn)
 }
 
-func (m *SCTPManager) handleConnection(conn *SCTPConnection) {
+func (m *SCTPManager) handleConnection(conn *SCTPClientConnection) {
 	m.logger.WithField("node_id", conn.NodeID).Info("Starting connection handler")
 
 	buffer := make([]byte, 65536) // 64KB buffer for E2AP messages

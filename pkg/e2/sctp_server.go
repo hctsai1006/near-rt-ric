@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/logging"
 	"github.com/ishidawataru/sctp"
 	"github.com/sirupsen/logrus"
 )
@@ -80,7 +79,7 @@ type SCTPConnection struct {
 	
 	// Network
 	conn       *sctp.SCTPConn
-	streams    []sctp.SCTPStream
+	// streams    []sctp.SCTPStream  // TODO: Check SCTP stream implementation
 	
 	// State management
 	state      ConnectionState
@@ -140,7 +139,7 @@ func NewSCTPServer(config *SCTPConfig, logger *logrus.Logger) (*SCTPServer, erro
 	
 	server := &SCTPServer{
 		config:            config,
-		logger:            logger.WithField("component", "sctp-server"),
+		logger:            logger.WithField("component", "sctp-server").Logger,
 		connections:       make(map[string]*SCTPConnection),
 		connectionsByNode: make(map[string]*SCTPConnection),
 		ctx:               ctx,
@@ -315,8 +314,8 @@ func (s *SCTPServer) acceptConnections() {
 			s.logger.Debug("SCTP connection acceptor stopping")
 			return
 		default:
-			// Set accept timeout to allow periodic context checking
-			s.listener.SetDeadline(time.Now().Add(1 * time.Second))
+			// TODO: Set accept timeout - SetDeadline not available in this SCTP library
+			// s.listener.SetDeadline(time.Now().Add(1 * time.Second))
 			
 			conn, err := s.listener.AcceptSCTP()
 			if err != nil {
@@ -399,14 +398,14 @@ func (s *SCTPServer) handleNewConnection(conn *sctp.SCTPConn) {
 // configureConnection configures SCTP-specific parameters for E2 interface
 func (s *SCTPServer) configureConnection(conn *SCTPConnection) {
 	// Configure socket options for O-RAN E2 requirements
-	if tcpConn, ok := conn.conn.(*sctp.SCTPConn); ok {
-		// Set socket buffer sizes
-		tcpConn.SetReadBuffer(s.config.BufferSize)
-		tcpConn.SetWriteBuffer(s.config.BufferSize)
+	if conn.conn != nil {
+		// TODO: Set socket buffer sizes - methods not available in this SCTP library
+		// conn.conn.SetReadBuffer(s.config.BufferSize)
+		// conn.conn.SetWriteBuffer(s.config.BufferSize)
 		
-		// Set timeouts
-		tcpConn.SetReadDeadline(time.Time{}) // No read timeout for persistent connections
-		tcpConn.SetWriteDeadline(time.Time{}) // No write timeout for persistent connections
+		// Set timeouts - TODO: SetDeadline methods not available in this SCTP library
+		// conn.conn.SetReadDeadline(time.Time{}) // No read timeout for persistent connections
+		// conn.conn.SetWriteDeadline(time.Time{}) // No write timeout for persistent connections
 	}
 	
 	s.logger.WithField("connection_id", conn.ID).Debug("SCTP connection configured for O-RAN E2")

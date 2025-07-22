@@ -2,13 +2,13 @@ package e2
 
 import (
 	"context"
+	"encoding/asn1"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/logging"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
 )
@@ -55,7 +55,7 @@ func NewE2Interface(cfg *config.E2Config, logger *logrus.Logger, metrics *monito
 
 	e2 := &E2Interface{
 		config:  cfg,
-		logger:  logger.WithField("component", "e2-interface"),
+		logger:  logger.WithField("component", "e2-interface").Logger,
 		metrics: metrics,
 		ctx:     ctx,
 		cancel:  cancel,
@@ -70,18 +70,18 @@ func NewE2Interface(cfg *config.E2Config, logger *logrus.Logger, metrics *monito
 
 	// Initialize SCTP server
 	sctpConfig := &SCTPConfig{
-		ListenAddress:     cfg.SCTP.ListenAddress,
-		Port:              cfg.SCTP.Port,
-		MaxConnections:    cfg.SCTP.MaxConnections,
-		ConnectionTimeout: time.Duration(cfg.SCTP.ConnectionTimeout) * time.Second,
-		HeartbeatInterval: time.Duration(cfg.SCTP.HeartbeatInterval) * time.Second,
-		BufferSize:        cfg.SCTP.BufferSize,
+		ListenAddress:     cfg.ListenAddress,
+		Port:              cfg.Port,
+		MaxConnections:    cfg.MaxConnections,
+		ConnectionTimeout: cfg.ConnectionTimeout,
+		HeartbeatInterval: cfg.HeartbeatInterval,
+		BufferSize:        cfg.BufferSize,
 		SCTP:              cfg.SCTP,
 		Streams:           cfg.SCTP.Streams,
 		MaxAttempts:       cfg.SCTP.MaxAttempts,
-		RTOInitial:        time.Duration(cfg.SCTP.RTOInitial) * time.Millisecond,
-		RTOMin:            time.Duration(cfg.SCTP.RTOMin) * time.Millisecond,
-		RTOMax:            time.Duration(cfg.SCTP.RTOMax) * time.Millisecond,
+		RTOInitial:        cfg.SCTP.InitialRTO,
+		RTOMin:            cfg.SCTP.RTOMin,
+		RTOMax:            cfg.SCTP.MaxRTO,
 	}
 
 	var err error
@@ -125,8 +125,8 @@ func (e2 *E2Interface) Start(ctx context.Context) error {
 	}
 
 	e2.logger.WithFields(logrus.Fields{
-		"sctp_address": fmt.Sprintf("%s:%d", e2.config.SCTP.ListenAddress, e2.config.SCTP.Port),
-		"max_nodes":    e2.config.SCTP.MaxConnections,
+		"sctp_address": fmt.Sprintf("%s:%d", e2.config.ListenAddress, e2.config.Port),
+		"max_nodes":    e2.config.MaxConnections,
 	}).Info("Starting O-RAN E2 interface")
 
 	// Start worker pool first
@@ -250,10 +250,11 @@ func (e2 *E2Interface) HandleE2SetupRequest(connectionID, nodeID string, req *E2
 				RANFunctionRevision: function.RANFunctionRevision,
 			})
 		} else {
+			ricCause := asn1.Enumerated(function.RANFunctionID)
 			response.RANFunctionsRejected = append(response.RANFunctionsRejected, RANFunctionRejected{
 				RANFunctionID: function.RANFunctionID,
 				Cause: Cause{
-					RIC: &function.RANFunctionID,
+					RIC: &ricCause,
 				},
 			})
 		}

@@ -362,8 +362,3 @@ func ParseXMLPath(path string) []string {
 	return result
 }
 
-// Helper function imports that may be missing
-import (
-	"strings"
-	"time"
-)

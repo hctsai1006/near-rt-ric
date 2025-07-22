@@ -68,12 +68,16 @@ const (
 	PresenceMandatory = 2
 )
 
+// E2NodeType represents the type of E2 node
+type E2NodeType string
+
 // E2 Node Types
 const (
-	E2NodeTypeGNB    = "gNB"
-	E2NodeTypeENB    = "eNB"
-	E2NodeTypeNGENB  = "ng-eNB"
-	E2NodeTypeENGNB  = "en-gNB"
+	E2NodeTypeUnknown E2NodeType = "unknown"
+	E2NodeTypeGNB     E2NodeType = "gNB"
+	E2NodeTypeENB     E2NodeType = "eNB"
+	E2NodeTypeNGENB   E2NodeType = "ng-eNB"
+	E2NodeTypeENGNB   E2NodeType = "en-gNB"
 )
 
 // RIC Action Types
@@ -81,6 +85,11 @@ const (
 	RICActionTypeReport  = 0
 	RICActionTypeInsert  = 1
 	RICActionTypePolicy  = 2
+)
+
+// E2 Protocol Constants
+const (
+	E2SCTPPort = 36421  // O-RAN standard E2 SCTP port
 )
 
 // RIC Indication Types
@@ -149,32 +158,32 @@ const (
 	ConnectionTimeout
 )
 
-// E2AP PDU Structure according to O-RAN specification
-type E2AP_PDU struct {
-	InitiatingMessage    *InitiatingMessage    `asn1:"tag:0,optional"`
-	SuccessfulOutcome    *SuccessfulOutcome    `asn1:"tag:1,optional"`
-	UnsuccessfulOutcome  *UnsuccessfulOutcome  `asn1:"tag:2,optional"`
+// Note: E2AP PDU structures are defined in asn1.go for proper ASN.1 encoding
+
+// E2APMessage represents a generic E2AP message wrapper
+type E2APMessage struct {
+	PDU       *E2AP_PDU
+	NodeID    string
+	Timestamp time.Time
 }
 
-// InitiatingMessage represents an initiating message
-type InitiatingMessage struct {
-	ProcedureCode int64                   `asn1:"tag:0"`
-	Criticality   asn1.Enumerated         `asn1:"tag:1"`
-	Value         interface{}             `asn1:"tag:2"`
-}
+// CauseType represents the type of cause in E2AP messages
+type CauseType int32
 
-// SuccessfulOutcome represents a successful outcome message
-type SuccessfulOutcome struct {
-	ProcedureCode int64                   `asn1:"tag:0"`
-	Criticality   asn1.Enumerated         `asn1:"tag:1"`
-	Value         interface{}             `asn1:"tag:2"`
-}
+const (
+	CauseTypeRIC CauseType = iota
+	CauseTypeProtocol
+	CauseTypeTransport
+	CauseTypeMisc
+)
 
-// UnsuccessfulOutcome represents an unsuccessful outcome message
-type UnsuccessfulOutcome struct {
-	ProcedureCode int64                   `asn1:"tag:0"`
-	Criticality   asn1.Enumerated         `asn1:"tag:1"`
-	Value         interface{}             `asn1:"tag:2"`
+// E2InterfaceConfig contains configuration for E2 interface
+type E2InterfaceConfig struct {
+	SCTP              SCTPConfig
+	Timeout           time.Duration
+	MaxNodes          int
+	HeartbeatInterval time.Duration
+	ConnectionTimeout time.Duration
 }
 
 // Global E2 Node ID structures

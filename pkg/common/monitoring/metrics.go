@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/prometheus"
+	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 
@@ -739,7 +740,7 @@ func (m *MetricsCollector) registerMetrics() {
 // setupOpenTelemetry configures OpenTelemetry metrics if enabled
 func (m *MetricsCollector) setupOpenTelemetry() {
 	// Create a Prometheus exporter
-	exporter, err := prometheus.New()
+	exporter, err := otelprometheus.New()
 	if err != nil {
 		m.logger.WithError(err).Error("Failed to create OpenTelemetry Prometheus exporter")
 		return

@@ -73,7 +73,8 @@
       "Bash(rg:*)",
       "Bash(du:*)",
       "Bash(true)",
-      "Bash(./scripts/validate-ci.sh:*)"
+      "Bash(./scripts/validate-ci.sh:*)",
+      "Bash(timeout 30s go build -v ./cmd/ric/)"
     ],
     "deny": []
   },

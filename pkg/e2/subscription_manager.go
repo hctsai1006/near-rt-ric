@@ -76,7 +76,7 @@ func NewSubscriptionManager(config *config.E2Config, logger *logrus.Logger, metr
 
 	return &SubscriptionManager{
 		config:                 config,
-		logger:                 logger.WithField("component", "subscription-manager"),
+		logger:                 logger.WithField("component", "subscription-manager").Logger,
 		metrics:               metrics,
 		codec:                 codec,
 		subscriptions:         make(map[string]*RICSubscription),
@@ -138,7 +138,7 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 	requestKey := sm.getRequestKey(nodeID, req.RICRequestID)
 
 	// Check if subscription already exists for this request
-	if existing, exists := sm.subscriptionsByRequest[requestKey]; exists {
+	if _, exists := sm.subscriptionsByRequest[requestKey]; exists {
 		return nil, fmt.Errorf("subscription already exists for node %s, request %s", nodeID, requestKey)
 	}
 

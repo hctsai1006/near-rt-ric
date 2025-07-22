@@ -84,26 +84,26 @@ func (m *E2NodeManager) AddNode(node E2Node) error {
 	}
 
 	// Check for duplicate node ID
-	if _, exists := m.nodes[node.ID]; exists {
-		return fmt.Errorf("node with ID %s already exists", node.ID)
+	if _, exists := m.nodes[node.NodeID]; exists {
+		return fmt.Errorf("node with ID %s already exists", node.NodeID)
 	}
 
 	// Set initial status
-	node.ConnectionStatus = StatusConnecting
+	node.Status = NodeStatusConnected
 	node.LastHeartbeat = time.Now()
 
 	// Store the node
-	m.nodes[node.ID] = &node
+	m.nodes[node.NodeID] = &node
 
 	m.logger.WithFields(logrus.Fields{
-		"node_id": node.ID,
-		"node_type": node.Type,
-		"address": node.Address,
-		"functions": len(node.FunctionList),
+		"node_id": node.NodeID,
+		"node_type": node.NodeType,
+		"address": node.RemoteAddress,
+		"functions": len(node.RANFunctions),
 	}).Info("E2 node added successfully")
 
 	// Send node update notification
-	m.sendNodeUpdate(node.ID, NodeEventConnected, nil)
+	m.sendNodeUpdate(node.NodeID, NodeEventConnected, nil)
 
 	return nil
 }
@@ -119,19 +119,18 @@ func (m *E2NodeManager) UpdateNode(nodeID string, updatedNode E2Node) error {
 	}
 
 	// Update node fields
-	node.Type = updatedNode.Type
-	node.PLMNIdentity = updatedNode.PLMNIdentity
-	node.Address = updatedNode.Address
-	node.Port = updatedNode.Port
-	node.FunctionList = updatedNode.FunctionList
-	node.ConnectionStatus = updatedNode.ConnectionStatus
-	node.SetupComplete = updatedNode.SetupComplete
+	node.NodeType = updatedNode.NodeType
+	node.GlobalE2NodeID = updatedNode.GlobalE2NodeID
+	node.RemoteAddress = updatedNode.RemoteAddress
+	node.RANFunctions = updatedNode.RANFunctions
+	node.Status = updatedNode.Status
 	node.LastHeartbeat = time.Now()
+	node.LastActivity = time.Now()
 
 	m.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
-		"status": updatedNode.ConnectionStatus,
-		"setup_complete": updatedNode.SetupComplete,
+		"status": updatedNode.Status,
+		"functions": len(updatedNode.RANFunctions),
 	}).Info("E2 node updated")
 
 	return nil
@@ -151,7 +150,7 @@ func (m *E2NodeManager) RemoveNode(nodeID string) error {
 
 	m.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
-		"node_type": node.Type,
+		"node_type": node.NodeType,
 	}).Info("E2 node removed")
 
 	// Send node update notification
@@ -197,7 +196,7 @@ func (m *E2NodeManager) GetNodesByType(nodeType E2NodeType) []*E2Node {
 
 	var nodes []*E2Node
 	for _, node := range m.nodes {
-		if node.Type == nodeType {
+		if E2NodeType(node.NodeType) == nodeType {
 			nodeCopy := *node
 			nodes = append(nodes, &nodeCopy)
 		}
@@ -213,7 +212,7 @@ func (m *E2NodeManager) GetOperationalNodes() []*E2Node {
 
 	var nodes []*E2Node
 	for _, node := range m.nodes {
-		if node.ConnectionStatus == StatusOperational {
+		if node.Status == NodeStatusOperational {
 			nodeCopy := *node
 			nodes = append(nodes, &nodeCopy)
 		}
@@ -231,14 +230,14 @@ func (m *E2NodeManager) GetNodeStatistics() map[string]interface{} {
 	stats["total_nodes"] = len(m.nodes)
 
 	// Count by status
-	statusCount := make(map[ConnectionStatus]int)
+	statusCount := make(map[NodeStatus]int)
 	typeCount := make(map[E2NodeType]int)
 	operationalCount := 0
 
 	for _, node := range m.nodes {
-		statusCount[node.ConnectionStatus]++
-		typeCount[node.Type]++
-		if node.ConnectionStatus == StatusOperational {
+		statusCount[node.Status]++
+		typeCount[E2NodeType(node.NodeType)]++
+		if node.Status == NodeStatusOperational {
 			operationalCount++
 		}
 	}
@@ -269,21 +268,23 @@ func (m *E2NodeManager) UpdateHeartbeat(nodeID string) error {
 // Helper methods
 
 func (m *E2NodeManager) validateNode(node *E2Node) error {
-	if node.ID == "" {
+	if node.NodeID == "" {
 		return fmt.Errorf("node ID cannot be empty")
 	}
 
-	if len(node.PLMNIdentity) != 3 {
-		return fmt.Errorf("PLMN Identity must be 3 bytes")
-	}
+	// TODO: Validate PLMN Identity from GlobalE2NodeID
+	// if len(node.PLMNIdentity) != 3 {
+	//     return fmt.Errorf("PLMN Identity must be 3 bytes")
+	// }
 
-	if node.Type == E2NodeTypeUnknown {
+	if E2NodeType(node.NodeType) == E2NodeTypeUnknown {
 		return fmt.Errorf("node type must be specified")
 	}
 
-	if node.Port <= 0 || node.Port > 65535 {
-		return fmt.Errorf("invalid port number: %d", node.Port)
-	}
+	// TODO: Validate port if needed
+	// if node.Port <= 0 || node.Port > 65535 {
+	//     return fmt.Errorf("invalid port number: %d", node.Port)
+	// }
 
 	return nil
 }
@@ -320,7 +321,7 @@ func (m *E2NodeManager) checkHeartbeats() {
 
 	now := time.Now()
 	for nodeID, node := range m.nodes {
-		if node.ConnectionStatus == StatusOperational {
+		if node.Status == NodeStatusOperational {
 			timeSinceHeartbeat := now.Sub(node.LastHeartbeat)
 			if timeSinceHeartbeat > m.connectionTimeout {
 				m.logger.WithFields(logrus.Fields{
@@ -328,7 +329,7 @@ func (m *E2NodeManager) checkHeartbeats() {
 					"time_since_heartbeat": timeSinceHeartbeat,
 				}).Warn("Node heartbeat timeout detected")
 
-				node.ConnectionStatus = StatusError
+				node.Status = NodeStatusFaulty
 				m.sendNodeUpdate(nodeID, NodeEventHeartbeatMissed, timeSinceHeartbeat)
 			}
 		}

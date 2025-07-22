@@ -13,7 +13,7 @@ import (
 // Implements the E2AP protocol as specified in O-RAN.WG3.E2AP-v03.00
 type ASN1Codec struct {
 	config *config.ASN1Config
-	logger *logrus.Logger
+	logger *logrus.Entry
 	
 	// Performance metrics
 	encodeCount uint64

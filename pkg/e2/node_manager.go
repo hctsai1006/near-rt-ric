@@ -2,12 +2,12 @@ package e2
 
 import (
 	"context"
+	"encoding/asn1"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/logging"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
 )
@@ -56,18 +56,7 @@ type NodeEvent struct {
 	Details   map[string]interface{}
 }
 
-// NodeEventType represents the type of node event
-type NodeEventType int
-
-const (
-	NodeEventConnected NodeEventType = iota
-	NodeEventDisconnected
-	NodeEventSetupStarted
-	NodeEventSetupCompleted
-	NodeEventSetupFailed
-	NodeEventError
-	NodeEventStale
-)
+// Note: NodeEventType and related constants are defined in node.go
 
 // NewNodeManager creates a new E2 node manager
 func NewNodeManager(config *config.E2Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector, codec *ASN1Codec) *NodeManager {
@@ -75,7 +64,7 @@ func NewNodeManager(config *config.E2Config, logger *logrus.Logger, metrics *mon
 
 	return &NodeManager{
 		config:            config,
-		logger:            logger.WithField("component", "node-manager"),
+		logger:            logger.WithField("component", "node-manager").Logger,
 		metrics:           metrics,
 		codec:             codec,
 		nodes:             make(map[string]*E2Node),
@@ -207,7 +196,7 @@ func (nm *NodeManager) HandleE2SetupRequest(connectionID string, req *E2SetupReq
 
 	// Send event
 	nm.sendEvent(NodeEvent{
-		Type:      NodeEventSetupStarted,
+		Type:      NodeEventConnected,
 		Node:      node,
 		Timestamp: time.Now(),
 	})
@@ -219,7 +208,7 @@ func (nm *NodeManager) HandleE2SetupRequest(connectionID string, req *E2SetupReq
 
 	// Determine node type and extract node ID
 	if globalNodeID.GNBNodeID != nil {
-		nodeType = E2NodeTypeGNB
+		nodeType = string(E2NodeTypeGNB)
 		realNodeID = fmt.Sprintf("gnb_%x", globalNodeID.GNBNodeID.PLMNIdentity)
 		if globalNodeID.GNBNodeID.GNBCUUPId != nil {
 			realNodeID += fmt.Sprintf("_cuup_%d", *globalNodeID.GNBNodeID.GNBCUUPId)
@@ -231,13 +220,13 @@ func (nm *NodeManager) HandleE2SetupRequest(connectionID string, req *E2SetupReq
 			realNodeID += fmt.Sprintf("_du_%d", *globalNodeID.GNBNodeID.GNBDUId)
 		}
 	} else if globalNodeID.ENBNodeID != nil {
-		nodeType = E2NodeTypeENB
+		nodeType = string(E2NodeTypeENB)
 		realNodeID = fmt.Sprintf("enb_%x_%x", globalNodeID.ENBNodeID.PLMNIdentity, globalNodeID.ENBNodeID.ENBId)
 	} else if globalNodeID.NGENBNodeID != nil {
-		nodeType = E2NodeTypeNGENB
+		nodeType = string(E2NodeTypeNGENB)
 		realNodeID = fmt.Sprintf("ng-enb_%x", globalNodeID.NGENBNodeID.PLMNIdentity)
 	} else if globalNodeID.ENGNBNodeID != nil {
-		nodeType = E2NodeTypeENGNB
+		nodeType = string(E2NodeTypeENGNB)
 		realNodeID = fmt.Sprintf("en-gnb_%x_%x", globalNodeID.ENGNBNodeID.PLMNIdentity, globalNodeID.ENGNBNodeID.GNBId)
 	} else {
 		return fmt.Errorf("invalid global E2 node ID in setup request")
@@ -268,8 +257,8 @@ func (nm *NodeManager) HandleE2SetupRequest(connectionID string, req *E2SetupReq
 	// Validate RAN functions
 	acceptedFunctions, rejectedFunctions := nm.validateRANFunctions(req.RANFunctions)
 
-	// Create setup response
-	response := &E2SetupResponse{
+	// TODO: Create setup response - currently unused
+	_ = &E2SetupResponse{
 		TransactionID: req.TransactionID,
 		GlobalRICID: GlobalRICID{
 			PLMNIdentity: []byte{0x02, 0xF8, 0x39}, // Example PLMN ID
@@ -292,7 +281,7 @@ func (nm *NodeManager) HandleE2SetupRequest(connectionID string, req *E2SetupReq
 
 		// Send success event
 		nm.sendEvent(NodeEvent{
-			Type:      NodeEventSetupCompleted,
+			Type:      NodeEventSetupComplete,
 			Node:      node,
 			Timestamp: time.Now(),
 		})
@@ -333,10 +322,11 @@ func (nm *NodeManager) validateRANFunctions(functions []RANFunction) ([]RANFunct
 				RANFunctionRevision: function.RANFunctionRevision,
 			})
 		} else {
+			causeEnum := asn1.Enumerated(function.RANFunctionID)
 			rejected = append(rejected, RANFunctionRejected{
 				RANFunctionID: function.RANFunctionID,
 				Cause: Cause{
-					RIC: &function.RANFunctionID, // Simplified cause
+					RIC: &causeEnum, // Simplified cause
 				},
 			})
 		}
@@ -427,11 +417,11 @@ func (nm *NodeManager) sendEvent(event NodeEvent) {
 				h.OnNodeConnected(event.Node)
 			case NodeEventDisconnected:
 				h.OnNodeDisconnected(event.Node)
-			case NodeEventSetupCompleted:
+			case NodeEventSetupComplete:
 				h.OnNodeSetupCompleted(event.Node)
 			case NodeEventSetupFailed:
 				h.OnNodeSetupFailed(event.Node, "Setup failed")
-			case NodeEventError:
+			case NodeEventHeartbeatMissed:
 				h.OnNodeError(event.Node, event.Error)
 			}
 		}(handler)
@@ -484,7 +474,7 @@ func (nm *NodeManager) checkStaleNodes() {
 
 		// Send event
 		nm.sendEvent(NodeEvent{
-			Type:      NodeEventStale,
+			Type:      NodeEventDisconnected,
 			Node:      node,
 			Timestamp: time.Now(),
 		})

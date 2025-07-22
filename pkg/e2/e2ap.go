@@ -16,8 +16,8 @@ type E2APProcessor struct {
 	logger       *logrus.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
-	transactions map[int32]*Transaction
-	nextTransID  int32
+	transactions map[int64]*Transaction
+	nextTransID  int64
 }
 
 // Transaction represents an ongoing E2AP transaction
@@ -53,7 +53,7 @@ func NewE2APProcessor(sctpManager *SCTPManager, nodeManager *E2NodeManager) *E2A
 		logger:       logrus.WithField("component", "e2ap-processor").Logger,
 		ctx:          ctx,
 		cancel:       cancel,
-		transactions: make(map[int32]*Transaction),
+		transactions: make(map[int64]*Transaction),
 		nextTransID:  1,
 	}
 	
@@ -88,9 +88,9 @@ func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte)
 	setupReq := &E2SetupRequest{
 		TransactionID: p.getNextTransactionID(),
 		GlobalE2NodeID: GlobalE2NodeID{
-			PLMNIdentity: []byte{0x00, 0xF1, 0x10}, // Example PLMN
-			E2NodeType:   E2NodeTypeGNB,
-			NodeIdentity: []byte(nodeID),
+			GNBNodeID: &GNBID{
+				PLMNIdentity: []byte{0x00, 0xF1, 0x10}, // Example PLMN
+			},
 		},
 		RANFunctions: []RANFunction{
 			{
@@ -103,25 +103,16 @@ func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte)
 
 	// Register the E2 node
 	node := &E2Node{
-		ID:               nodeID,
-		Type:             setupReq.GlobalE2NodeID.E2NodeType,
-		PLMNIdentity:     setupReq.GlobalE2NodeID.PLMNIdentity,
-		Address:          "", // Will be set by SCTP manager
-		Port:             E2SCTPPort,
-		ConnectionStatus: StatusSetupInProgress,
-		SetupComplete:    false,
+		NodeID:           nodeID,
+		NodeType:         string(E2NodeTypeGNB),
+		GlobalE2NodeID:   setupReq.GlobalE2NodeID,
+		RemoteAddress:    "", // Will be set by SCTP manager
+		Status:           NodeStatusSetupInProgress,
 		LastHeartbeat:    time.Now(),
 	}
 
 	// Add supported functions
-	for _, ranFunc := range setupReq.RANFunctions {
-		node.FunctionList = append(node.FunctionList, E2NodeFunction{
-			OID:             fmt.Sprintf("1.3.6.1.4.1.%d", ranFunc.RANFunctionID),
-			Description:     string(ranFunc.RANFunctionDefinition),
-			Instance:        int(ranFunc.RANFunctionID),
-			ServiceModelOID: "1.3.6.1.4.1.53148.1.1.2.2", // E2SM-KPM OID
-		})
-	}
+	node.RANFunctions = setupReq.RANFunctions
 
 	p.nodeManager.AddNode(*node)
 
@@ -130,9 +121,9 @@ func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte)
 		TransactionID: setupReq.TransactionID,
 		GlobalRICID: GlobalRICID{
 			PLMNIdentity: []byte{0x00, 0xF1, 0x10},
-			RICInstance:  []byte{0x00, 0x00, 0x00, 0x01}, // RIC Instance ID
+			RICIdentity:  []byte{0x00, 0x00, 0x00, 0x01}, // RIC Instance ID
 		},
-		RANFunctionsAccepted: []RANFunctionIDItem{
+		RANFunctionsAccepted: []RANFunctionAccepted{
 			{
 				RANFunctionID:       1,
 				RANFunctionRevision: 1,
@@ -153,8 +144,8 @@ func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte)
 	}
 
 	// Update node status
-	node.ConnectionStatus = StatusOperational
-	node.SetupComplete = true
+	node.Status = NodeStatusOperational
+	node.ConnectedAt = time.Now()
 	p.nodeManager.UpdateNode(nodeID, *node)
 
 	p.logger.WithFields(logrus.Fields{
@@ -189,12 +180,12 @@ func (p *E2APProcessor) ProcessSubscriptionRequest(nodeID string, requestData []
 
 	// Extract subscription parameters (simplified)
 	subscription := &RICSubscription{
-		RICRequestID: RICRequestID{
+		RequestID: RICRequestID{
 			RICRequestorID: 1,
 			RICInstanceID:  1,
 		},
 		RANFunctionID: 1, // E2SM-KPM
-		RICSubscriptionDetails: RICSubscriptionDetails{
+		SubscriptionDetails: RICSubscriptionDetails{
 			RICEventTriggerDefinition: []byte("periodic:1000ms"), // 1 second periodic
 			RICActions: []RICAction{
 				{
@@ -207,8 +198,8 @@ func (p *E2APProcessor) ProcessSubscriptionRequest(nodeID string, requestData []
 
 	// Store subscription (would be in a proper subscription manager)
 	p.logger.WithFields(logrus.Fields{
-		"requestor_id": subscription.RICRequestID.RICRequestorID,
-		"instance_id":  subscription.RICRequestID.RICInstanceID,
+		"requestor_id": subscription.RequestID.RICRequestorID,
+		"instance_id":  subscription.RequestID.RICInstanceID,
 		"function_id":  subscription.RANFunctionID,
 	}).Info("RIC Subscription stored")
 
@@ -276,7 +267,7 @@ func (p *E2APProcessor) sendSubscriptionFailure(nodeID string, causeType CauseTy
 	return nil
 }
 
-func (p *E2APProcessor) getNextTransactionID() int32 {
+func (p *E2APProcessor) getNextTransactionID() int64 {
 	id := p.nextTransID
 	p.nextTransID++
 	if p.nextTransID > 1000000 {

@@ -99,7 +99,7 @@ func NewWorkerPool(config *config.E2Config, logger *logrus.Logger, metrics *moni
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Determine worker count
-	workerCount := config.WorkerPool.Workers
+	workerCount := config.WorkerPool.Size
 	if workerCount <= 0 {
 		workerCount = runtime.NumCPU() * 2 // Default: 2 workers per CPU core
 	}
@@ -112,7 +112,7 @@ func NewWorkerPool(config *config.E2Config, logger *logrus.Logger, metrics *moni
 
 	pool := &WorkerPool{
 		config:        config,
-		logger:        logger.WithField("component", "worker-pool"),
+		logger:        logger.WithField("component", "worker-pool").Logger,
 		metrics:       metrics,
 		workerCount:   workerCount,
 		workers:       make([]*Worker, workerCount),

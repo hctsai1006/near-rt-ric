@@ -64,12 +64,16 @@ type E2Config struct {
 	HeartbeatInterval   time.Duration `mapstructure:"heartbeat_interval"`
 	BufferSize          int           `mapstructure:"buffer_size"`
 	WorkerPoolSize      int           `mapstructure:"worker_pool_size"`
+	SubscriptionTimeout time.Duration `mapstructure:"subscription_timeout"`
 	
 	// SCTP specific configuration
 	SCTP SCTPConfig `mapstructure:"sctp"`
 	
 	// ASN.1 configuration
 	ASN1 ASN1Config `mapstructure:"asn1"`
+	
+	// Worker Pool configuration
+	WorkerPool WorkerPoolConfig `mapstructure:"worker_pool"`
 	
 	// E2 Service Model configuration
 	ServiceModels []ServiceModelConfig `mapstructure:"service_models"`
@@ -235,6 +239,12 @@ type SCTPConfig struct {
 type ASN1Config struct {
 	Strict          bool `mapstructure:"strict"`
 	ValidateOnDecode bool `mapstructure:"validate_on_decode"`
+}
+
+// WorkerPoolConfig contains worker pool configuration
+type WorkerPoolConfig struct {
+	Size      int `mapstructure:"size"`
+	QueueSize int `mapstructure:"queue_size"`
 }
 
 // ServiceModelConfig contains E2 Service Model configuration
