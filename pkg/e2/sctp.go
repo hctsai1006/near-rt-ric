@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ishidawataru/sctp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -74,15 +75,18 @@ func (m *SCTPManager) SetMessageHandler(handler func(nodeID string, data []byte)
 
 // Listen starts listening for incoming SCTP connections
 func (m *SCTPManager) Listen() error {
-	listenAddr := fmt.Sprintf("%s:%d", m.listenAddress, m.listenPort)
+	listenAddr := &sctp.SCTPAddr{
+		IPAddrs: []net.IPAddr{{IP: net.ParseIP(m.listenAddress)}},
+		Port:    m.listenPort,
+	}
 	
 	m.logger.WithFields(logrus.Fields{
 		"address": m.listenAddress,
 		"port":    m.listenPort,
 	}).Info("Starting SCTP listener for E2 interface")
 
-	// For demonstration, using TCP listener (in production, would use SCTP)
-	listener, err := net.Listen("tcp", listenAddr)
+	// Use proper SCTP listener for O-RAN E2 interface
+	listener, err := sctp.ListenSCTP("sctp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to start SCTP listener: %w", err)
 	}
@@ -112,14 +116,37 @@ func (m *SCTPManager) Connect(nodeID, address string, port int) error {
 		"port":    port,
 	}).Info("Establishing SCTP connection to E2 node")
 
-	// Create connection with timeout
-	dialer := &net.Dialer{
-		Timeout: m.connectTimeout,
+	// Create SCTP connection with timeout handling
+	remoteAddr := &sctp.SCTPAddr{
+		IPAddrs: []net.IPAddr{{IP: net.ParseIP(address)}},
+		Port:    port,
 	}
 
-	conn, err := dialer.DialContext(m.ctx, "tcp", fmt.Sprintf("%s:%d", address, port))
-	if err != nil {
+	// Create channel for connection result
+	connChan := make(chan net.Conn, 1)
+	errChan := make(chan error, 1)
+	
+	// Attempt SCTP connection in goroutine
+	go func() {
+		conn, err := sctp.DialSCTP("sctp", nil, remoteAddr)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		connChan <- conn
+	}()
+
+	// Wait for connection or timeout
+	var conn net.Conn
+	select {
+	case conn = <-connChan:
+		// Connection successful
+	case err := <-errChan:
 		return fmt.Errorf("failed to establish SCTP connection to %s: %w", nodeID, err)
+	case <-time.After(m.connectTimeout):
+		return fmt.Errorf("SCTP connection to %s timed out after %v", nodeID, m.connectTimeout)
+	case <-m.ctx.Done():
+		return fmt.Errorf("SCTP connection to %s cancelled", nodeID)
 	}
 
 	// Create connection object

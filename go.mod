@@ -8,7 +8,8 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	
-	// ASN.1 and encoding support
+	// ASN.1 and encoding support - PER encoding for O-RAN E2AP
+	github.com/free5gc/aper v1.0.5
 	github.com/davecgh/go-asn1 v0.0.0-20201127003707-4d4c6d0f4bd8
 	
 	// NETCONF/YANG support

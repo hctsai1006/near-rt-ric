@@ -76,5 +76,10 @@
       "Bash(./scripts/validate-ci.sh:*)"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "github",
+    "filesystem"
+  ]
 }

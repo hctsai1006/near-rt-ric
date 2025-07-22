@@ -1,0 +1,113 @@
+version: 2
+updates:
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "ric-maintainers"
+    assignees:
+      - "ric-maintainers"
+    commit-message:
+      prefix: "deps(go)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+      - "automerge"
+    ignore:
+      # Ignore major version updates for critical dependencies
+      - dependency-name: "github.com/gin-gonic/gin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "gorm.io/gorm"
+        update-types: ["version-update:semver-major"]
+
+  # Node.js dependencies (frontend)
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+    open-pull-requests-limit: 15
+    reviewers:
+      - "ric-maintainers"
+    assignees:
+      - "ric-maintainers"
+    commit-message:
+      prefix: "deps(npm)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "frontend"
+      - "javascript"
+    ignore:
+      # Ignore Angular major updates (require manual migration)
+      - dependency-name: "@angular/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ric-maintainers"
+    assignees:
+      - "ric-maintainers"
+    commit-message:
+      prefix: "deps(docker)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "infrastructure"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ric-maintainers"
+    assignees:
+      - "ric-maintainers"
+    commit-message:
+      prefix: "deps(actions)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci-cd"
+
+  # Helm charts (if using external charts)
+  - package-ecosystem: "bundler"
+    directory: "/helm"
+    schedule:
+      interval: "monthly"
+      day: "first-monday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "ric-maintainers"
+    assignees:
+      - "ric-maintainers"
+    commit-message:
+      prefix: "deps(helm)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "helm"
+      - "kubernetes"
