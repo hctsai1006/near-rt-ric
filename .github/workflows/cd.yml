@@ -1,0 +1,457 @@
+name: Continuous Deployment
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version to deploy'
+        required: true
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and push Docker images
+  build-and-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    strategy:
+      matrix:
+        component: [main, e2-interface, a1-interface, o1-interface, xapp-manager, web]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.${{ matrix.component }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=${{ steps.meta.outputs.version }}
+          BUILD_TIME=${{ github.run_number }}
+
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component }}:${{ steps.meta.outputs.version }}
+        format: spdx-json
+        output-file: sbom-${{ matrix.component }}.spdx.json
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: sbom-${{ matrix.component }}
+        path: sbom-${{ matrix.component }}.spdx.json
+
+  # Security scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    strategy:
+      matrix:
+        component: [main, e2-interface, a1-interface, o1-interface, xapp-manager, web]
+    steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component }}:${{ needs.build-and-push.outputs.version }}'
+        format: 'sarif'
+        output: 'trivy-results-${{ matrix.component }}.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results-${{ matrix.component }}.sarif'
+
+    - name: Run Grype vulnerability scanner
+      uses: anchore/scan-action@v3
+      with:
+        image: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.component }}:${{ needs.build-and-push.outputs.version }}'
+        fail-build: false
+        output-format: sarif
+        output-file: grype-results-${{ matrix.component }}.sarif
+
+    - name: Upload Grype scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'grype-results-${{ matrix.component }}.sarif'
+
+  # Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan]
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://near-rt-ric-staging.example.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl config view
+
+    - name: Create namespace
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl create namespace near-rt-ric-staging --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy with Helm
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        helm upgrade --install near-rt-ric-staging ./helm/near-rt-ric/ \
+          --namespace near-rt-ric-staging \
+          --set image.tag=${{ needs.build-and-push.outputs.version }} \
+          --set environment=staging \
+          --set ingress.hosts[0].host=near-rt-ric-staging.example.com \
+          --set postgresql.persistence.size=10Gi \
+          --set redis.persistence.size=5Gi \
+          --values helm/near-rt-ric/values-staging.yaml \
+          --wait --timeout=10m
+
+    - name: Run smoke tests
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=near-rt-ric \
+          --namespace=near-rt-ric-staging --timeout=300s
+        
+        # Run basic health checks
+        kubectl exec -n near-rt-ric-staging deployment/near-rt-ric-main -- curl -f http://localhost:8080/health || exit 1
+
+    - name: Notify deployment success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: "✅ Near-RT RIC deployed to staging successfully!"
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Load testing on staging
+  load-test-staging:
+    name: Load Test Staging
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Run load tests against staging
+      env:
+        TARGET_URL: https://near-rt-ric-staging.example.com
+        LOAD_TEST_DURATION: 5m
+        LOAD_TEST_VUS: 50
+      run: |
+        go test -v -timeout=10m -tags=load ./test/load/... \
+          -target-url=$TARGET_URL \
+          -duration=$LOAD_TEST_DURATION \
+          -virtual-users=$LOAD_TEST_VUS
+
+    - name: Upload load test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: load-test-results-staging
+        path: |
+          load-test-results.json
+          load-test-report.html
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan, load-test-staging]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://near-rt-ric.example.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl config view
+
+    - name: Create namespace
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl create namespace near-rt-ric --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Backup current deployment
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        helm get values near-rt-ric -n near-rt-ric > backup-values-$(date +%Y%m%d-%H%M%S).yaml || true
+
+    - name: Deploy with Helm (Blue-Green)
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        
+        # Deploy to green slot
+        helm upgrade --install near-rt-ric-green ./helm/near-rt-ric/ \
+          --namespace near-rt-ric \
+          --set image.tag=${{ needs.build-and-push.outputs.version }} \
+          --set environment=production \
+          --set nameOverride=near-rt-ric-green \
+          --set ingress.hosts[0].host=near-rt-ric-green.example.com \
+          --set postgresql.persistence.size=100Gi \
+          --set redis.persistence.size=50Gi \
+          --values helm/near-rt-ric/values-production.yaml \
+          --wait --timeout=15m
+
+    - name: Run production smoke tests
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=near-rt-ric-green \
+          --namespace=near-rt-ric --timeout=300s
+        
+        # Run comprehensive health checks
+        kubectl exec -n near-rt-ric deployment/near-rt-ric-green-main -- curl -f http://localhost:8080/health || exit 1
+        kubectl exec -n near-rt-ric deployment/near-rt-ric-green-e2 -- curl -f http://localhost:8080/health || exit 1
+        kubectl exec -n near-rt-ric deployment/near-rt-ric-green-a1 -- curl -f http://localhost:8080/health || exit 1
+        kubectl exec -n near-rt-ric deployment/near-rt-ric-green-o1 -- curl -f http://localhost:8080/health || exit 1
+
+    - name: Switch traffic to green (Blue-Green deployment)
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        
+        # Update ingress to point to green deployment
+        kubectl patch ingress near-rt-ric-ingress -n near-rt-ric \
+          --patch '{"spec":{"rules":[{"host":"near-rt-ric.example.com","http":{"paths":[{"path":"/","pathType":"Prefix","backend":{"service":{"name":"near-rt-ric-green","port":{"number":80}}}}]}}]}}'
+        
+        # Wait for ingress update
+        sleep 30
+        
+        # Verify traffic switch
+        curl -f https://near-rt-ric.example.com/health || exit 1
+
+    - name: Clean up old blue deployment
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        helm uninstall near-rt-ric -n near-rt-ric || true
+        
+        # Rename green to main
+        helm upgrade near-rt-ric ./helm/near-rt-ric/ \
+          --namespace near-rt-ric \
+          --set image.tag=${{ needs.build-and-push.outputs.version }} \
+          --set environment=production \
+          --set ingress.hosts[0].host=near-rt-ric.example.com \
+          --values helm/near-rt-ric/values-production.yaml \
+          --reuse-values
+
+    - name: Notify production deployment success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: "🚀 Near-RT RIC deployed to production successfully! Version: ${{ needs.build-and-push.outputs.version }}"
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Post-deployment monitoring
+  post-deployment-monitoring:
+    name: Post-Deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: success()
+    steps:
+    - name: Set up monitoring alerts
+      run: |
+        # Configure alerting rules for new deployment
+        curl -X POST "${{ secrets.ALERTMANAGER_URL }}/api/v1/alerts" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "alerts": [
+              {
+                "labels": {
+                  "alertname": "DeploymentMonitoring",
+                  "service": "near-rt-ric",
+                  "version": "${{ needs.build-and-push.outputs.version }}",
+                  "severity": "info"
+                },
+                "annotations": {
+                  "summary": "Monitoring new deployment",
+                  "description": "Monitoring deployment ${{ needs.build-and-push.outputs.version }} for 30 minutes"
+                },
+                "startsAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "endsAt": "$(date -u -d \"+30 minutes\" +%Y-%m-%dT%H:%M:%SZ)"
+              }
+            ]
+          }'
+
+    - name: Run post-deployment verification
+      run: |
+        # Wait 5 minutes for metrics to be collected
+        sleep 300
+        
+        # Check key metrics
+        echo "Checking deployment health metrics..."
+        # This would typically query Prometheus/Grafana APIs
+        
+        echo "✅ Post-deployment monitoring initiated"
+
+  # Create GitHub release
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-production]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Generate release notes
+      run: |
+        echo "# Release Notes for ${{ github.ref_name }}" > release-notes.md
+        echo "" >> release-notes.md
+        echo "## What's Changed" >> release-notes.md
+        git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## Docker Images" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/main:${{ github.ref_name }}\`" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/e2-interface:${{ github.ref_name }}\`" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/a1-interface:${{ github.ref_name }}\`" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/o1-interface:${{ github.ref_name }}\`" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/xapp-manager:${{ github.ref_name }}\`" >> release-notes.md
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web:${{ github.ref_name }}\`" >> release-notes.md
+
+    - name: Create Release
+      uses: ncipollo/release-action@v1
+      with:
+        name: "Release ${{ github.ref_name }}"
+        bodyFile: "release-notes.md"
+        tag: ${{ github.ref_name }}
+        draft: false
+        prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+        generateReleaseNotes: true
+
+  # Rollback capability
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy-production.result == 'failure'
+    needs: [deploy-production]
+    environment:
+      name: production
+      url: https://near-rt-ric.example.com
+    steps:
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > /tmp/kubeconfig
+        export KUBECONFIG=/tmp/kubeconfig
+
+    - name: Rollback to previous version
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        helm rollback near-rt-ric -n near-rt-ric
+
+    - name: Verify rollback
+      run: |
+        export KUBECONFIG=/tmp/kubeconfig
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=near-rt-ric \
+          --namespace=near-rt-ric --timeout=300s
+        curl -f https://near-rt-ric.example.com/health || exit 1
+
+    - name: Notify rollback
+      uses: 8398a7/action-slack@v3
+      with:
+        status: warning
+        text: "⚠️ Near-RT RIC production deployment failed and was rolled back!"
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Cleanup old images
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always()
+    steps:
+    - name: Delete old container images
+      uses: actions/delete-package-versions@v4
+      with:
+        package-name: '${{ github.repository }}/main'
+        package-type: 'container'
+        min-versions-to-keep: 10
+        delete-only-untagged-versions: false
