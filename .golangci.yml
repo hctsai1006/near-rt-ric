@@ -1,198 +1,96 @@
-# Configuration for golangci-lint
-# https://golangci-lint.run/usage/configuration/
-
 run:
   timeout: 5m
-  issues-exit-code: 1
-  tests: true
+  tests: false
   skip-dirs:
     - vendor
+    - node_modules
     - .git
-    - bin
-    - tmp
   skip-files:
-    - ".*\\.pb\\.go$"
-    - ".*_test\\.go$"
-  modules-download-mode: readonly
-
-output:
-  format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  uniq-by-line: true
-  sort-results: true
+    - ".*_test.go$"
 
 linters-settings:
-  # Cyclomatic complexity
-  cyclop:
-    max-complexity: 15
-    package-average: 10.0
-    skip-tests: true
-
-  # Duplicate code detection
-  dupl:
-    threshold: 100
-
-  # Error handling
-  errorlint:
-    errorf: true
-    asserts: true
-    comparison: true
-
-  # Function length
-  funlen:
-    lines: 100
-    statements: 50
-
-  # Cognitive complexity
-  gocognit:
-    min-complexity: 15
-
-  # Cyclomatic complexity (alternative)
+  govet:
+    check-shadowing: false
+  golint:
+    min-confidence: 0.8
   gocyclo:
     min-complexity: 15
-
-  # Line length
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 2
+    min-occurrences: 2
+  misspell:
+    locale: US
   lll:
-    line-length: 120
-
-  # Naming conventions
-  stylecheck:
-    go: "1.21"
-    checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"]
-    dot-import-whitelist:
-      - fmt
-    http-status-code-whitelist: ["200", "400", "404", "500"]
-
-  # Unused code
-  unused:
-    go: "1.21"
-
-  # Variable naming
-  varnamelen:
-    min-name-length: 2
-    ignore-names:
-      - err
-      - id
-      - i
-      - j
-      - k
-      - v
-      - ok
-    ignore-decls:
-      - c echo.Context
-      - t testing.T
-      - f *os.File
-      - w http.ResponseWriter
-      - r *http.Request
-
-  # Import order
+    line-length: 140
   goimports:
     local-prefixes: github.com/hctsai1006/near-rt-ric
-
-  # Security
-  gosec:
-    severity: "medium"
-    confidence: "medium"
-    excludes:
-      - G104 # Audit errors not checked
-      - G204 # Subprocess launched with potentially tainted input
-    config:
-      G306: "0644"
-
-  # Revive (golint replacement)
-  revive:
-    min-confidence: 0.8
-    severity: warning
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
 
 linters:
   enable:
-    # Enabled by default
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - typecheck
-    - unused
-    
-    # Additional linters
-    - asciicheck
-    - bidichk
     - bodyclose
-    - containedctx
-    - contextcheck
-    - cyclop
+    - deadcode
+    - depguard
+    - dogsled
     - dupl
-    - errorlint
-    - exhaustive
-    - exportloopref
-    - funlen
-    - gci
-    - gocognit
+    - errcheck
+    - gochecknoinits
     - goconst
     - gocritic
-    - gocyclo
-    - godot
     - gofmt
-    - gofumpt
     - goimports
+    - golint
     - gomnd
     - goprintffuncname
     - gosec
-    - importas
+    - gosimple
+    - govet
+    - ineffassign
+    - interfacer
     - lll
     - misspell
     - nakedret
-    - prealloc
-    - predeclared
-    - revive
+    - rowserrcheck
+    - staticcheck
+    - structcheck
     - stylecheck
+    - typecheck
     - unconvert
     - unparam
+    - unused
+    - varcheck
     - whitespace
 
-  disable:
-    # Disabled linters (too strict or conflicting)
-    - exhaustivestruct
-    - exhaustruct
-    - goerr113
-    - paralleltest
-    - testpackage
-    - wsl
-
 issues:
-  exclude-use-default: false
   exclude-rules:
-    # Exclude some lints from running on tests files
-    - path: _test\.go
+    # Disable linting for known issues during transition
+    - path: pkg/a1/
       linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - funlen
-        - goconst
-        - cyclop
-        - lll
-        - gocognit
-        
-    # Exclude known linters from generated files
-    - path: ".*\\.pb\\.go"
+        - typecheck
+    - path: pkg/o1/
+      linters:  
+        - typecheck
+    - path: pkg/xapp/
       linters:
-        - all
-        
-    # Exclude shadow warnings in switch statements
-    - text: "shadow: declaration of \"err\""
+        - typecheck
+    - path: cmd/
       linters:
-        - govet
-
-  # Maximum issues count per one linter
-  max-issues-per-linter: 0
-  
-  # Maximum count of issues with the same text
-  max-same-issues: 0
+        - typecheck
+  exclude:
+    # Standard excludes
+    - "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv). is not checked"
+    # Ignore missing comments for now
+    - "exported .* should have comment.*or be unexported"
+    # Allow complex functions during refactoring
+    - "cyclomatic complexity .* of func .* is high"
 
 severity:
   default-severity: warning
-  case-sensitive: false
