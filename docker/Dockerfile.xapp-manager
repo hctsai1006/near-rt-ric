@@ -1,0 +1,69 @@
+# Dedicated Dockerfile for xApp Manager
+# Multi-stage build optimized for xApp management functionality
+
+# Stage 1: Build stage
+FROM golang:1.21-alpine3.18 AS builder
+
+# Security and build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    linux-headers \
+    && update-ca-certificates
+
+# Create build user
+RUN adduser -D -g '' xappbuilder
+
+WORKDIR /build
+
+# Copy dependency files
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build xApp Manager with optimizations
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o xapp-manager \
+    ./cmd/xapp-manager/main.go
+
+# Stage 2: Runtime
+FROM alpine:3.18 AS runtime
+
+# Install runtime dependencies for xApp management
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    && update-ca-certificates
+
+# Create xapp user
+RUN adduser -D -g '' xappuser
+
+# Create directories
+RUN mkdir -p /app/configs /app/xapps /app/logs && \
+    chown -R xappuser:xappuser /app
+
+# Copy binary and configs
+COPY --from=builder /build/xapp-manager /app/xapp-manager
+COPY --from=builder /build/configs/xapp-config.yaml /app/configs/
+
+# Set ownership
+RUN chown xappuser:xappuser /app/xapp-manager
+
+USER xappuser
+WORKDIR /app
+
+# Expose xApp Manager ports
+EXPOSE 8088 8089
+
+# Health check specific to xApp Manager
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8088/health || exit 1
+
+CMD ["./xapp-manager"]

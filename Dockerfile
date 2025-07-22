@@ -1,8 +1,8 @@
-# Multi-stage Dockerfile for O-RAN Near-RT RIC
-# Production-ready image with security best practices
+# Multi-stage Docker build for O-RAN Near-RT RIC
+# Based on security best practices and minimal attack surface
 
-# Build stage
-FROM golang:1.21-alpine AS builder
+# Stage 1: Build stage with full development environment
+FROM golang:1.21-alpine3.18 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -11,13 +11,14 @@ RUN apk add --no-cache \
     tzdata \
     gcc \
     musl-dev \
-    && rm -rf /var/cache/apk/*
+    linux-headers \
+    && update-ca-certificates
 
-# Create non-root user for building
+# Create non-root user for build
 RUN adduser -D -g '' appuser
 
 # Set working directory
-WORKDIR /app
+WORKDIR /build
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
@@ -28,65 +29,89 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
+# Build the application with security flags
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
     -o near-rt-ric \
-    ./cmd/near-rt-ric
+    ./cmd/ric/main.go
 
-# Verify the binary
-RUN ldd near-rt-ric || true  # Should show "not a dynamic executable"
+# Build xApp manager
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o xapp-manager \
+    ./cmd/xapp-manager/main.go
 
-# Final stage - distroless for maximum security
-FROM gcr.io/distroless/static-debian11:nonroot
+# Stage 2: Runtime stage with minimal base image
+FROM scratch AS runtime
 
-# Labels for metadata
-LABEL maintainer="O-RAN Near-RT RIC Team" \
-      version="1.0.0" \
-      description="Production-grade O-RAN Near Real-Time RAN Intelligent Controller" \
-      org.opencontainers.image.title="near-rt-ric" \
-      org.opencontainers.image.description="O-RAN Near-RT RIC with E2, A1, and O1 interfaces" \
-      org.opencontainers.image.version="1.0.0" \
-      org.opencontainers.image.vendor="O-RAN Software Community" \
-      org.opencontainers.image.licenses="Apache-2.0"
+# Import timezone data and CA certificates from builder
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /etc/passwd /etc/passwd
 
-# Create necessary directories with proper permissions
-USER root
-RUN mkdir -p /etc/near-rt-ric /var/log/near-rt-ric /var/lib/near-rt-ric
-USER nonroot:nonroot
+# Copy the binary from builder
+COPY --from=builder /build/near-rt-ric /near-rt-ric
+COPY --from=builder /build/xapp-manager /xapp-manager
+
+# Copy configuration files
+COPY --from=builder /build/configs /configs
+
+# Use non-root user
+USER appuser
+
+# Expose ports
+EXPOSE 8080 8443 830 2152
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/near-rt-ric", "health"]
+
+# Default command
+CMD ["/near-rt-ric"]
+
+# Stage 3: Development image with debugging tools
+FROM golang:1.21-alpine3.18 AS development
+
+# Install development tools
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    linux-headers \
+    curl \
+    netcat-openbsd \
+    tcpdump \
+    strace \
+    && update-ca-certificates
+
+# Install Go debugging tools
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Create non-root user
+RUN adduser -D -g '' developer
 
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
-COPY --from=builder /app/near-rt-ric .
+# Copy source code
+COPY . .
 
-# Copy configuration files
-COPY --chown=nonroot:nonroot configs/default-config.yaml /etc/near-rt-ric/config.yaml
-COPY --chown=nonroot:nonroot configs/yang/ /etc/near-rt-ric/yang/
+# Download dependencies
+RUN go mod download
 
-# Expose ports according to O-RAN specifications
-# E2 interface (SCTP)
-EXPOSE 36421
-# A1 interface (HTTP/HTTPS)
-EXPOSE 10020 10021
-# O1 interface (NETCONF over SSH)
-EXPOSE 830
-# Metrics (Prometheus)
-EXPOSE 9090
-# Health check
-EXPOSE 8081
+# Build with debug symbols
+RUN CGO_ENABLED=1 go build -gcflags="all=-N -l" -o near-rt-ric ./cmd/ric/main.go
+RUN CGO_ENABLED=1 go build -gcflags="all=-N -l" -o xapp-manager ./cmd/xapp-manager/main.go
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD ["/app/near-rt-ric", "--health-check"]
+# Use non-root user
+USER developer
 
-# Set entrypoint and default command
-ENTRYPOINT ["/app/near-rt-ric"]
-CMD ["--config=/etc/near-rt-ric/config.yaml"]
+# Expose debug port
+EXPOSE 40000
 
-# Security: Run as non-root user (already set via distroless)
-# Security: Read-only filesystem (can be set at runtime with --read-only)
-# Security: No shell access (distroless doesn't include shell)
-# Security: Minimal attack surface (distroless contains only necessary files)
+# Default command for development
+CMD ["./near-rt-ric"]

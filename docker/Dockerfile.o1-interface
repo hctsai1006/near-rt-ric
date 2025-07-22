@@ -1,0 +1,76 @@
+# Dedicated Dockerfile for O1 Interface Component
+# Optimized for NETCONF/YANG management interface
+
+# Stage 1: Build stage
+FROM golang:1.21-alpine3.18 AS builder
+
+# Install build dependencies including SSH for NETCONF
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    linux-headers \
+    openssh-client \
+    && update-ca-certificates
+
+# Create build user
+RUN adduser -D -g '' o1builder
+
+WORKDIR /build
+
+# Copy dependency files
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build O1 interface component
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o o1-interface \
+    ./cmd/o1-interface/main.go
+
+# Stage 2: Runtime
+FROM alpine:3.18 AS runtime
+
+# Install runtime dependencies for NETCONF
+RUN apk add --no-cache \
+    ca-certificates \
+    openssh-server \
+    openssh-client \
+    && update-ca-certificates
+
+# Create o1 user
+RUN adduser -D -g '' o1user
+
+# Create SSH host keys for NETCONF server
+RUN ssh-keygen -A
+
+# Create directories
+RUN mkdir -p /app/configs /app/yang /app/ssh /app/logs && \
+    chown -R o1user:o1user /app
+
+# Copy binary and configs
+COPY --from=builder /build/o1-interface /app/o1-interface
+COPY --from=builder /build/configs/o1-config.yaml /app/configs/
+COPY --from=builder /build/yang/ /app/yang/
+
+# Generate SSH host key for NETCONF
+RUN ssh-keygen -t rsa -b 2048 -f /app/ssh/netconf_host_key -N '' && \
+    chown -R o1user:o1user /app
+
+USER o1user
+WORKDIR /app
+
+# Expose O1/NETCONF ports (SSH and TLS)
+EXPOSE 830 6513
+
+# Health check for O1 interface
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ./o1-interface health || exit 1
+
+CMD ["./o1-interface"]

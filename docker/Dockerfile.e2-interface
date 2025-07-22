@@ -1,0 +1,72 @@
+# Dedicated Dockerfile for E2 Interface Component
+# Optimized for E2 protocol handling with SCTP support
+
+# Stage 1: Build stage
+FROM golang:1.21-alpine3.18 AS builder
+
+# Install E2-specific build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    gcc \
+    musl-dev \
+    linux-headers \
+    pkgconfig \
+    && update-ca-certificates
+
+# Create build user
+RUN adduser -D -g '' e2builder
+
+WORKDIR /build
+
+# Copy dependency files
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build E2 interface component with SCTP support
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -tags "sctp" \
+    -a -installsuffix cgo \
+    -o e2-interface \
+    ./cmd/e2-interface/main.go
+
+# Stage 2: Runtime
+FROM alpine:3.18 AS runtime
+
+# Install runtime dependencies for E2/SCTP
+RUN apk add --no-cache \
+    ca-certificates \
+    lksctp-tools \
+    && update-ca-certificates
+
+# Create e2 user
+RUN adduser -D -g '' e2user
+
+# Create directories
+RUN mkdir -p /app/configs /app/asn1 /app/logs && \
+    chown -R e2user:e2user /app
+
+# Copy binary and configs
+COPY --from=builder /build/e2-interface /app/e2-interface
+COPY --from=builder /build/configs/e2-config.yaml /app/configs/
+COPY --from=builder /build/asn1/ /app/asn1/
+
+# Set ownership
+RUN chown -R e2user:e2user /app
+
+USER e2user
+WORKDIR /app
+
+# Expose E2 ports (SCTP)
+EXPOSE 36421 36422
+
+# Health check for E2 interface
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ./e2-interface health || exit 1
+
+CMD ["./e2-interface"]

@@ -1,0 +1,108 @@
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+docs/
+*.md
+
+# Test files
+*_test.go
+test/
+testdata/
+coverage.out
+coverage.html
+
+# Build artifacts
+bin/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependency directories
+vendor/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker files (except main ones)
+docker-compose.override.yml
+docker-compose.dev.yml
+
+# IDE files
+*.iml
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+
+# Go specific
+*.test
+*.prof
+*.mem
+*.cpu
+
+# Certificates and keys (should not be in image)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Configuration overrides
+config.local.yaml
+*.local.yaml
+
+# Helm charts (built separately)
+helm/
+
+# Kubernetes manifests (deployed separately)
+k8s/
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+
+# Backup files
+*.bak
+*.backup
