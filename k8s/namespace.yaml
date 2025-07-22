@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: near-rt-ric
+  labels:
+    name: near-rt-ric
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+    app.kubernetes.io/version: "1.0.0"
+    # Security and policy labels
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # Network policy labels
+    network-policy: enabled
+    # Monitoring labels
+    monitoring: enabled
+  annotations:
+    # Documentation
+    description: "O-RAN Near Real-Time RAN Intelligent Controller"
+    version: "1.0.0"
+    # Compliance annotations
+    compliance.o-ran.org/interfaces: "E2,A1,O1"
+    compliance.o-ran.org/version: "v3.0"
+    # Resource quotas
+    scheduler.alpha.kubernetes.io/preferred-durations: "600s,1800s"

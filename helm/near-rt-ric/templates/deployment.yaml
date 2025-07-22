@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: main
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "near-rt-ric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: main
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "near-rt-ric.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: main
+    spec:
+      {{- include "near-rt-ric.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "near-rt-ric.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "near-rt-ric.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.ports.http }}
+              protocol: TCP
+            - name: https
+              containerPort: {{ .Values.service.ports.https }}
+              protocol: TCP
+            - name: netconf
+              containerPort: {{ .Values.service.ports.netconf }}
+              protocol: TCP
+            - name: e2
+              containerPort: {{ .Values.service.ports.e2 }}
+              protocol: SCTP
+          env:
+            {{- include "near-rt-ric.commonEnvVars" . | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          volumeMounts:
+            {{- include "near-rt-ric.commonVolumeMounts" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        {{- include "near-rt-ric.commonVolumes" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

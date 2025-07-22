@@ -1,0 +1,455 @@
+# Default deny all ingress and egress traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# Allow ingress to Near-RT RIC main service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-near-rt-ric-ingress
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+      app.kubernetes.io/component: main
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow ingress from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow internal communication within namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+    - protocol: TCP
+      port: 830
+  # Allow monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: prometheus-system
+    ports:
+    - protocol: TCP
+      port: 8080
+
+---
+# Allow E2 interface traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-e2-interface
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+    app.kubernetes.io/component: e2
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+      app.kubernetes.io/component: e2
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow E2 traffic from RAN nodes (external)
+  - ports:
+    - protocol: SCTP
+      port: 36421
+    - protocol: SCTP
+      port: 36422
+    - protocol: TCP
+      port: 8080  # Management interface
+  # Allow internal communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Allow egress to database
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Allow A1 interface traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-a1-interface
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+    app.kubernetes.io/component: a1
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+      app.kubernetes.io/component: a1
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow A1 traffic from Non-RT RIC and SMO
+  - ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow internal communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  # Allow ingress controller access
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  egress:
+  # Allow egress to database and cache
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Allow O1 interface traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-o1-interface
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+    app.kubernetes.io/component: o1
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+      app.kubernetes.io/component: o1
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow NETCONF traffic from management systems
+  - ports:
+    - protocol: TCP
+      port: 830   # NETCONF SSH
+    - protocol: TCP
+      port: 6513  # NETCONF TLS
+    - protocol: TCP
+      port: 8080  # Management interface
+  # Allow internal communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Allow egress to database
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# Allow xApp Manager traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-xapp-manager
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+    app.kubernetes.io/component: xapp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+      app.kubernetes.io/component: xapp
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow xApp management traffic
+  - ports:
+    - protocol: TCP
+      port: 8088
+    - protocol: TCP
+      port: 8089
+  # Allow internal communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 8088
+    - protocol: TCP
+      port: 8089
+  egress:
+  # Allow full egress for xApp deployment and management
+  - to: []
+
+---
+# Allow database traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-database-access
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow access from RIC components
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: prometheus-system
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# Allow Redis traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-access
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow access from RIC components
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: prometheus-system
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# Allow Kafka traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-access
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow access from RIC components
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: near-rt-ric
+    ports:
+    - protocol: TCP
+      port: 9092
+  # Allow Zookeeper communication
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: zookeeper
+    ports:
+    - protocol: TCP
+      port: 9092
+  # Allow monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9092
+
+---
+# Allow monitoring traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-egress
+  namespace: near-rt-ric
+  labels:
+    app.kubernetes.io/name: near-rt-ric
+    app.kubernetes.io/part-of: o-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: near-rt-ric
+  policyTypes:
+  - Egress
+  egress:
+  # Allow metrics export to external monitoring systems
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: prometheus-system
+    ports:
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 3000
+  # Allow InfluxDB access
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: influxdb
+    ports:
+    - protocol: TCP
+      port: 8086

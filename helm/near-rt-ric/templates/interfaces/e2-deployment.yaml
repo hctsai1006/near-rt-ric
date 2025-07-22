@@ -1,0 +1,208 @@
+{{- if .Values.interfaces.e2.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-e2
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+spec:
+  replicas: {{ .Values.interfaces.e2.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "near-rt-ric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: e2
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "near-rt-ric.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: e2
+    spec:
+      {{- include "near-rt-ric.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "near-rt-ric.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: e2-interface
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "near-rt-ric.interfaceImage" (dict "Values" .Values "interface" .Values.interfaces.e2) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: sctp1
+              containerPort: {{ .Values.interfaces.e2.service.ports.sctp1 }}
+              protocol: SCTP
+            - name: sctp2
+              containerPort: {{ .Values.interfaces.e2.service.ports.sctp2 }}
+              protocol: SCTP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            {{- include "near-rt-ric.commonEnvVars" . | nindent 12 }}
+            - name: CONFIG_PATH
+              value: "/app/configs/e2-config.yaml"
+            - name: COMPONENT
+              value: "e2-interface"
+          livenessProbe:
+            exec:
+              command:
+                - /app/e2-interface
+                - health
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /app/e2-interface
+                - ready
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: asn1-schemas
+              mountPath: /app/asn1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.interfaces.e2.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "near-rt-ric.fullname" . }}-e2-config
+        - name: asn1-schemas
+          configMap:
+            name: {{ include "near-rt-ric.fullname" . }}-asn1-schemas
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-e2
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.interfaces.e2.service.type }}
+  ports:
+    - port: {{ .Values.interfaces.e2.service.ports.sctp1 }}
+      targetPort: sctp1
+      protocol: SCTP
+      name: sctp1
+    - port: {{ .Values.interfaces.e2.service.ports.sctp2 }}
+      targetPort: sctp2
+      protocol: SCTP
+      name: sctp2
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "near-rt-ric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+
+---
+# E2 specific ConfigMap for ASN.1 schemas
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-asn1-schemas
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+data:
+  # E2AP ASN.1 Schema (simplified)
+  E2AP-v03.00.asn1: |
+    E2AP-PDU-Contents {
+        itu-t (0) identified-organization (4) etsi (0) mobileDomain (0)
+        ngran-access (22) modules (3) e2ap (1) version1 (1) e2ap-PDU-Contents (1)
+    }
+
+    DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    -- E2 Setup Request
+    E2setupRequest ::= SEQUENCE {
+        protocolIEs     ProtocolIE-Container        { {E2setupRequestIEs} },
+        ...
+    }
+
+    E2setupRequestIEs E2AP-PROTOCOL-IES ::= {
+        { ID id-GlobalE2node-ID                 CRITICALITY reject  TYPE GlobalE2node-ID                PRESENCE mandatory } |
+        { ID id-RANfunctionsAdded               CRITICALITY reject  TYPE RANfunctionsID-List            PRESENCE mandatory } |
+        { ID id-E2nodeComponentConfigAddition   CRITICALITY reject  TYPE E2nodeComponentConfigAddition-List PRESENCE mandatory },
+        ...
+    }
+
+    -- Additional ASN.1 definitions would go here
+    END
+
+  # RAN Function definitions
+  RAN-Function-Definition.asn1: |
+    RAN-FUNCTION-DEFINITION DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    RANfunction-Name ::= SEQUENCE {
+        ranFunction-ShortName       PrintableString(SIZE(1..150,...)),
+        ranFunction-E2SM-OID        PrintableString(SIZE(1..1000,...)),
+        ranFunction-Description     PrintableString(SIZE(1..150,...)),
+        ranFunction-Instance        INTEGER OPTIONAL,
+        ...
+    }
+
+    END
+
+---
+# Service Monitor for Prometheus scraping
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-e2
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+spec:
+  selector:
+    matchLabels:
+      {{- include "near-rt-ric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: e2
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+{{- end }}
+{{- end }}

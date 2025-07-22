@@ -1,0 +1,269 @@
+{
+  "policy_types": [
+    {
+      "policy_type_id": 1,
+      "name": "QoS Management Policy",
+      "description": "Policy for managing Quality of Service parameters",
+      "policy_type_version": "1.0.0",
+      "create_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "ue_id": {
+                "type": "string",
+                "description": "User Equipment identifier"
+              },
+              "cell_id": {
+                "type": "string",
+                "description": "Cell identifier"
+              },
+              "slice_id": {
+                "type": "string",
+                "description": "Network slice identifier"
+              }
+            },
+            "required": ["ue_id"]
+          },
+          "statement": {
+            "type": "object",
+            "properties": {
+              "qos": {
+                "type": "object",
+                "properties": {
+                  "gbr": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Guaranteed Bit Rate in Kbps"
+                  },
+                  "mbr": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Maximum Bit Rate in Kbps"
+                  },
+                  "latency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "description": "Maximum latency in milliseconds"
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 15,
+                    "description": "QoS priority level"
+                  }
+                },
+                "required": ["gbr", "latency"]
+              }
+            },
+            "required": ["qos"]
+          }
+        },
+        "required": ["scope", "statement"]
+      }
+    },
+    {
+      "policy_type_id": 2,
+      "name": "Handover Management Policy",
+      "description": "Policy for managing handover decisions",
+      "policy_type_version": "1.0.0",
+      "create_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "cell_list": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            },
+            "required": ["cell_list"]
+          },
+          "statement": {
+            "type": "object",
+            "properties": {
+              "handover_parameters": {
+                "type": "object",
+                "properties": {
+                  "rsrp_threshold": {
+                    "type": "integer",
+                    "minimum": -140,
+                    "maximum": -44,
+                    "description": "RSRP threshold in dBm"
+                  },
+                  "rsrq_threshold": {
+                    "type": "number",
+                    "minimum": -20,
+                    "maximum": -3,
+                    "description": "RSRQ threshold in dB"
+                  },
+                  "hysteresis": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 30,
+                    "description": "Handover hysteresis in dB"
+                  },
+                  "time_to_trigger": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5120,
+                    "description": "Time to trigger in milliseconds"
+                  }
+                },
+                "required": ["rsrp_threshold", "time_to_trigger"]
+              }
+            },
+            "required": ["handover_parameters"]
+          }
+        },
+        "required": ["scope", "statement"]
+      }
+    }
+  ],
+  "policy_instances": [
+    {
+      "policy_id": "qos-policy-001",
+      "policy_type_id": 1,
+      "ric_id": "ric-001",
+      "policy_data": {
+        "scope": {
+          "ue_id": "12345678901234567890",
+          "cell_id": "cell-001"
+        },
+        "statement": {
+          "qos": {
+            "gbr": 1000,
+            "mbr": 5000,
+            "latency": 10,
+            "priority": 5
+          }
+        }
+      }
+    },
+    {
+      "policy_id": "handover-policy-001",
+      "policy_type_id": 2,
+      "ric_id": "ric-001",
+      "policy_data": {
+        "scope": {
+          "cell_list": ["cell-001", "cell-002", "cell-003"]
+        },
+        "statement": {
+          "handover_parameters": {
+            "rsrp_threshold": -110,
+            "rsrq_threshold": -10,
+            "hysteresis": 2,
+            "time_to_trigger": 320
+          }
+        }
+      }
+    }
+  ],
+  "enrichment_information_types": [
+    {
+      "ei_type_id": "ue-location",
+      "ei_type_name": "UE Location Information",
+      "ei_type_description": "Real-time UE location information",
+      "ei_job_data_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "tracking_area": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accuracy_level": {
+            "type": "string",
+            "enum": ["cell", "beam", "gps"]
+          },
+          "update_frequency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          }
+        },
+        "required": ["tracking_area", "accuracy_level"]
+      }
+    }
+  ],
+  "enrichment_information_jobs": [
+    {
+      "ei_job_id": "location-job-001",
+      "ei_type_id": "ue-location",
+      "job_owner": "qos-policy-service",
+      "job_definition": {
+        "tracking_area": ["ta-001", "ta-002"],
+        "accuracy_level": "cell",
+        "update_frequency": 30
+      },
+      "job_result_uri": "http://policy-service/api/v1/location-updates",
+      "status_notification_uri": "http://policy-service/api/v1/job-status"
+    }
+  ],
+  "ml_models": [
+    {
+      "model_id": "qoe-prediction-v1",
+      "model_name": "Quality of Experience Prediction",
+      "model_version": "1.0.0",
+      "model_description": "ML model for predicting user quality of experience",
+      "model_type": "tensorflow",
+      "training_data_schema": {
+        "type": "object",
+        "properties": {
+          "features": {
+            "type": "object",
+            "properties": {
+              "throughput": {"type": "number"},
+              "latency": {"type": "number"},
+              "jitter": {"type": "number"},
+              "packet_loss": {"type": "number"},
+              "signal_strength": {"type": "number"},
+              "interference": {"type": "number"},
+              "mobility_state": {"type": "string", "enum": ["stationary", "low", "medium", "high"]}
+            }
+          },
+          "label": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "QoE score from 1 (poor) to 5 (excellent)"
+          }
+        }
+      },
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "throughput": {"type": "number"},
+          "latency": {"type": "number"},
+          "signal_strength": {"type": "number"}
+        },
+        "required": ["throughput", "latency", "signal_strength"]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "qoe_score": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    }
+  ]
+}

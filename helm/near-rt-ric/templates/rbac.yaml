@@ -1,0 +1,207 @@
+{{- if .Values.serviceAccount.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+rules:
+  # Core API permissions for xApp management
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Deployment permissions
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Service account permissions
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # RBAC permissions for xApp service accounts
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Network policy permissions
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Ingress permissions
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Custom resource permissions for xApps
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Metrics and monitoring
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  
+  # Events for logging and monitoring
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create"]
+  
+  # Node access for placement decisions
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  
+  # Endpoints for service discovery
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "near-rt-ric.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "near-rt-ric.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
+# Additional role for namespace-specific operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+rules:
+  # Full access within the namespace
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+  
+  # Special permissions for finalizers
+  - apiGroups: [""]
+    resources: ["pods/finalizers", "services/finalizers"]
+    verbs: ["update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "near-rt-ric.fullname" . }}-namespace
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "near-rt-ric.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
+{{- if .Values.interfaces.xapp.enabled }}
+# xApp-specific ClusterRole for xApp management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-manager
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: xapp
+rules:
+  # xApp lifecycle management
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Deployment management for xApps
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # HPA for xApp scaling
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Pod disruption budgets
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Jobs and CronJobs for xApp tasks
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-manager
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: xapp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "near-rt-ric.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+
+---
+# Security policy for xApp containers
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-security
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+rules:
+  # Security context constraints
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    verbs: ["use"]
+    resourceNames: ["restricted"]
+  
+  # Pod security policies
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    verbs: ["use"]
+    resourceNames: ["{{ include "near-rt-ric.fullname" . }}-xapp-psp"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-security
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-security
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "near-rt-ric.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

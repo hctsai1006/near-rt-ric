@@ -1,0 +1,438 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+data:
+  ric-config.yaml: |
+    # O-RAN Near-RT RIC Configuration
+    server:
+      host: "0.0.0.0"
+      port: {{ .Values.service.ports.http }}
+      tls:
+        enabled: true
+        port: {{ .Values.service.ports.https }}
+        cert_file: "/etc/ssl/certs/tls.crt"
+        key_file: "/etc/ssl/private/tls.key"
+    
+    logging:
+      level: {{ .Values.config.logLevel }}
+      format: "json"
+      output: "stdout"
+    
+    database:
+      {{- if .Values.postgresql.enabled }}
+      host: {{ .Release.Name }}-postgresql
+      port: 5432
+      name: {{ .Values.postgresql.auth.database }}
+      user: {{ .Values.postgresql.auth.username }}
+      {{- else }}
+      host: "localhost"
+      port: 5432
+      name: "near_rt_ric"
+      user: "ric_user"
+      {{- end }}
+      sslmode: "require"
+      max_connections: 100
+      max_idle_connections: 10
+      connection_timeout: "30s"
+    
+    redis:
+      {{- if .Values.redis.enabled }}
+      addr: {{ .Release.Name }}-redis-master:6379
+      {{- if .Values.redis.auth.enabled }}
+      password: "${REDIS_PASSWORD}"
+      {{- end }}
+      {{- else }}
+      addr: "localhost:6379"
+      {{- end }}
+      db: 0
+      pool_size: 10
+      min_idle_connections: 5
+      dial_timeout: "5s"
+      read_timeout: "3s"
+      write_timeout: "3s"
+    
+    kafka:
+      {{- if .Values.kafka.enabled }}
+      brokers:
+        - {{ .Release.Name }}-kafka:9092
+      {{- else }}
+      brokers:
+        - "localhost:9092"
+      {{- end }}
+      topics:
+        e2_messages: "e2-messages"
+        a1_policies: "a1-policies"
+        xapp_events: "xapp-events"
+      consumer_group: "near-rt-ric"
+      batch_size: 100
+      batch_timeout: "100ms"
+    
+    influxdb:
+      {{- if .Values.influxdb.enabled }}
+      url: http://{{ .Release.Name }}-influxdb:8086
+      org: {{ .Values.influxdb.auth.org }}
+      bucket: {{ .Values.influxdb.auth.bucket }}
+      {{- else }}
+      url: "http://localhost:8086"
+      org: "o-ran"
+      bucket: "metrics"
+      {{- end }}
+      batch_size: 1000
+      flush_interval: "10s"
+    
+    interfaces:
+      e2:
+        enabled: {{ .Values.interfaces.e2.enabled }}
+        {{- if .Values.interfaces.e2.enabled }}
+        host: "0.0.0.0"
+        port: {{ .Values.service.ports.e2 }}
+        sctp:
+          enabled: true
+          streams: 10
+          heartbeat_interval: "30s"
+        asn1:
+          version: "v3.0"
+          codec: "per"
+        {{- end }}
+      
+      a1:
+        enabled: {{ .Values.interfaces.a1.enabled }}
+        {{- if .Values.interfaces.a1.enabled }}
+        host: "0.0.0.0"
+        port: 8080
+        tls_port: 8443
+        jwt:
+          secret: "${JWT_SECRET}"
+          expiration: "24h"
+        rate_limiting:
+          enabled: true
+          requests_per_minute: 1000
+        {{- end }}
+      
+      o1:
+        enabled: {{ .Values.interfaces.o1.enabled }}
+        {{- if .Values.interfaces.o1.enabled }}
+        netconf:
+          host: "0.0.0.0"
+          port: {{ .Values.service.ports.netconf }}
+          ssh:
+            enabled: true
+            host_key_file: "/etc/ssh/ssh_host_rsa_key"
+          tls:
+            enabled: true
+            port: 6513
+            cert_file: "/etc/ssl/certs/tls.crt"
+            key_file: "/etc/ssl/private/tls.key"
+        yang:
+          models_path: "/app/yang"
+          validate: true
+        {{- end }}
+    
+    xapp:
+      enabled: {{ .Values.interfaces.xapp.enabled }}
+      {{- if .Values.interfaces.xapp.enabled }}
+      deployment_engine: "kubernetes"
+      kubernetes:
+        namespace: {{ .Release.Namespace }}
+        in_cluster: true
+      max_instances: 1000
+      deployment_timeout: "300s"
+      health_check:
+        interval: "30s"
+        timeout: "10s"
+        failure_threshold: 3
+      {{- end }}
+    
+    monitoring:
+      enabled: true
+      metrics:
+        enabled: true
+        port: 8080
+        path: "/metrics"
+      health:
+        enabled: true
+        port: 8080
+        path: "/health"
+      tracing:
+        enabled: false
+        endpoint: ""
+        service_name: "near-rt-ric"
+    
+    security:
+      tls:
+        min_version: "1.3"
+        cipher_suites:
+          - "TLS_AES_256_GCM_SHA384"
+          - "TLS_CHACHA20_POLY1305_SHA256"
+          - "TLS_AES_128_GCM_SHA256"
+      auth:
+        enabled: true
+        jwt:
+          algorithm: "HS256"
+          secret: "${JWT_SECRET}"
+        rbac:
+          enabled: true
+          policy_file: "/etc/rbac/policy.yaml"
+      
+    environment: {{ .Values.config.environment }}
+---
+{{- if .Values.interfaces.e2.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-e2-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e2
+data:
+  e2-config.yaml: |
+    # E2 Interface Configuration
+    server:
+      host: "0.0.0.0"
+      port: 36421
+      sctp:
+        enabled: true
+        streams: 10
+        heartbeat_interval: "30s"
+        rto_initial: "3s"
+        rto_min: "1s"
+        rto_max: "60s"
+    
+    asn1:
+      version: "v3.0"
+      codec: "per"
+      validation: true
+    
+    e2_setup:
+      timeout: "10s"
+      max_retries: 3
+      retry_interval: "5s"
+    
+    ran_functions:
+      - function_id: 1
+        name: "RAN Control"
+        version: "1.0"
+        oid: "1.3.6.1.4.1.1.22.1.1"
+      - function_id: 2
+        name: "Key Performance Measurement"
+        version: "1.0"  
+        oid: "1.3.6.1.4.1.1.22.1.2"
+      - function_id: 3
+        name: "RAN Report"
+        version: "1.0"
+        oid: "1.3.6.1.4.1.1.22.1.3"
+    
+    database:
+      {{- if .Values.postgresql.enabled }}
+      host: {{ .Release.Name }}-postgresql
+      port: 5432
+      name: {{ .Values.postgresql.auth.database }}
+      user: {{ .Values.postgresql.auth.username }}
+      {{- end }}
+    
+    logging:
+      level: {{ .Values.config.logLevel }}
+      format: "json"
+{{- end }}
+---
+{{- if .Values.interfaces.a1.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+data:
+  a1-config.yaml: |
+    # A1 Interface Configuration
+    server:
+      host: "0.0.0.0"
+      port: 8080
+      tls:
+        enabled: true
+        port: 8443
+        cert_file: "/etc/ssl/certs/tls.crt"
+        key_file: "/etc/ssl/private/tls.key"
+    
+    api:
+      version: "v2.1.0"
+      base_path: "/a1"
+      cors:
+        enabled: true
+        allowed_origins: ["*"]
+        allowed_methods: ["GET", "POST", "PUT", "DELETE"]
+    
+    auth:
+      jwt:
+        enabled: true
+        secret: "${JWT_SECRET}"
+        algorithm: "HS256"
+        expiration: "24h"
+      rate_limiting:
+        enabled: true
+        requests_per_minute: 1000
+    
+    policy:
+      validation:
+        enabled: true
+        schema_validation: true
+      enforcement:
+        timeout: "30s"
+        retries: 3
+    
+    database:
+      {{- if .Values.postgresql.enabled }}
+      host: {{ .Release.Name }}-postgresql
+      port: 5432
+      name: {{ .Values.postgresql.auth.database }}
+      user: {{ .Values.postgresql.auth.username }}
+      {{- end }}
+    
+    logging:
+      level: {{ .Values.config.logLevel }}
+      format: "json"
+{{- end }}
+---
+{{- if .Values.interfaces.o1.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-o1-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: o1
+data:
+  o1-config.yaml: |
+    # O1 Interface Configuration
+    netconf:
+      ssh:
+        enabled: true
+        host: "0.0.0.0"
+        port: 830
+        host_key_file: "/etc/ssh/ssh_host_rsa_key"
+        username: "netconf"
+        password: "netconf"
+      tls:
+        enabled: true
+        host: "0.0.0.0"
+        port: 6513
+        cert_file: "/etc/ssl/certs/tls.crt"
+        key_file: "/etc/ssl/private/tls.key"
+    
+    yang:
+      models_path: "/app/yang"
+      validate: true
+      models:
+        - "ietf-netconf@2011-06-01.yang"
+        - "ietf-netconf-monitoring@2010-10-04.yang"
+        - "o-ran-sc-ric@2021-03-05.yang"
+    
+    datastores:
+      running:
+        enabled: true
+        persistent: true
+      candidate:
+        enabled: true
+        persistent: false
+      startup:
+        enabled: true
+        persistent: true
+    
+    fcaps:
+      fault:
+        enabled: true
+        alarm_retention: "30d"
+      configuration:
+        enabled: true
+        change_tracking: true
+      accounting:
+        enabled: true
+      performance:
+        enabled: true
+        collection_interval: "60s"
+      security:
+        enabled: true
+        audit_logging: true
+    
+    database:
+      {{- if .Values.postgresql.enabled }}
+      host: {{ .Release.Name }}-postgresql
+      port: 5432
+      name: {{ .Values.postgresql.auth.database }}
+      user: {{ .Values.postgresql.auth.username }}
+      {{- end }}
+    
+    logging:
+      level: {{ .Values.config.logLevel }}
+      format: "json"
+{{- end }}
+---
+{{- if .Values.interfaces.xapp.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-xapp-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: xapp
+data:
+  xapp-config.yaml: |
+    # xApp Manager Configuration
+    server:
+      host: "0.0.0.0"
+      port: 8088
+      management_port: 8089
+    
+    deployment_engine: "kubernetes"
+    
+    kubernetes:
+      namespace: {{ .Release.Namespace }}
+      in_cluster: true
+      config_path: ""
+    
+    xapp:
+      max_instances: 1000
+      deployment_timeout: "300s"
+      health_check:
+        interval: "30s"
+        timeout: "10s"
+        failure_threshold: 3
+      registry:
+        enabled: true
+        type: "kubernetes"
+    
+    dependency_resolution:
+      enabled: true
+      circular_detection: true
+      timeout: "60s"
+    
+    database:
+      {{- if .Values.postgresql.enabled }}
+      host: {{ .Release.Name }}-postgresql
+      port: 5432
+      name: {{ .Values.postgresql.auth.database }}
+      user: {{ .Values.postgresql.auth.username }}
+      {{- end }}
+    
+    kafka:
+      {{- if .Values.kafka.enabled }}
+      brokers:
+        - {{ .Release.Name }}-kafka:9092
+      {{- end }}
+      topics:
+        xapp_events: "xapp-events"
+        xapp_lifecycle: "xapp-lifecycle"
+    
+    logging:
+      level: {{ .Values.config.logLevel }}
+      format: "json"
+{{- end }}

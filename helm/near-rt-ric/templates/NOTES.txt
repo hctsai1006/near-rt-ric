@@ -1,0 +1,71 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "near-rt-ric.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "near-rt-ric.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "near-rt-ric.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.ports.http }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "near-rt-ric.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Check the status of the O-RAN Near-RT RIC deployment:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }}
+
+3. View logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }} -f
+
+4. Check interface components:
+{{- if .Values.interfaces.e2.enabled }}
+   E2 Interface: kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }}-e2
+{{- end }}
+{{- if .Values.interfaces.a1.enabled }}
+   A1 Interface: kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }}-a1
+{{- end }}
+{{- if .Values.interfaces.o1.enabled }}
+   O1 Interface: kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }}-o1
+{{- end }}
+{{- if .Values.interfaces.xapp.enabled }}
+   xApp Manager: kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "near-rt-ric.name" . }}-xapp
+{{- end }}
+
+5. Access monitoring:
+{{- if .Values.monitoring.prometheus.enabled }}
+   Prometheus: kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-prometheus-server 9090:80
+{{- end }}
+{{- if .Values.monitoring.grafana.enabled }}
+   Grafana: kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-grafana 3000:80
+   Username: admin
+   Password: {{ .Values.monitoring.grafana.admin.password }}
+{{- end }}
+
+6. Health checks:
+   kubectl get --namespace {{ .Release.Namespace }} --selector=app.kubernetes.io/name={{ include "near-rt-ric.name" . }} pods -o wide
+
+7. Configuration:
+   kubectl get configmap --namespace {{ .Release.Namespace }} {{ include "near-rt-ric.fullname" . }}-config -o yaml
+
+8. Secrets:
+   kubectl get secrets --namespace {{ .Release.Namespace }} | grep {{ include "near-rt-ric.name" . }}
+
+{{- if .Values.tests.enabled }}
+9. Run tests:
+   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- end }}
+
+For more information about O-RAN Near-RT RIC, visit:
+- Documentation: https://github.com/hctsai1006/near-rt-ric/docs
+- O-RAN Alliance: https://www.o-ran.org/
+- Support: ric-team@example.com

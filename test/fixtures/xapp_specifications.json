@@ -1,0 +1,485 @@
+{
+  "xapp_catalog": [
+    {
+      "name": "kpi-monitoring-xapp",
+      "version": "1.2.3",
+      "description": "xApp for monitoring Key Performance Indicators from E2 nodes",
+      "category": "monitoring",
+      "helm_chart": {
+        "repository": "oci://registry-1.docker.io/oran",
+        "name": "kpi-monitoring-xapp",
+        "version": "1.2.3"
+      },
+      "config_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "kpi_collection": {
+            "type": "object",
+            "properties": {
+              "interval_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600,
+                "default": 60
+              },
+              "metrics": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["throughput", "latency", "jitter", "packet_loss", "connection_count"]
+                },
+                "default": ["throughput", "latency"]
+              }
+            }
+          },
+          "storage": {
+            "type": "object",
+            "properties": {
+              "retention_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365,
+                "default": 30
+              },
+              "compression": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          },
+          "alerting": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "thresholds": {
+                "type": "object",
+                "properties": {
+                  "throughput_min_mbps": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 10
+                  },
+                  "latency_max_ms": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 50
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": ["kpi_collection"]
+      },
+      "resource_requirements": {
+        "requests": {
+          "cpu": "200m",
+          "memory": "256Mi"
+        },
+        "limits": {
+          "cpu": "1000m",
+          "memory": "1Gi"
+        }
+      },
+      "interfaces": {
+        "e2": {
+          "required": true,
+          "version": "v3.0",
+          "functions": ["KPM", "RC"]
+        },
+        "a1": {
+          "required": false,
+          "version": "v2.1"
+        }
+      },
+      "provides": [
+        "kpi-data-service",
+        "metrics-export-service"
+      ],
+      "dependencies": [],
+      "permissions": [
+        "e2:subscribe",
+        "e2:query",
+        "metrics:write"
+      ]
+    },
+    {
+      "name": "load-balancing-xapp",
+      "version": "2.0.1",
+      "description": "Intelligent load balancing xApp using ML-based traffic prediction",
+      "category": "optimization",
+      "helm_chart": {
+        "repository": "oci://registry-1.docker.io/oran",
+        "name": "load-balancing-xapp",
+        "version": "2.0.1"
+      },
+      "config_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "load_balancing": {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "type": "string",
+                "enum": ["round_robin", "weighted_round_robin", "least_connections", "ml_based"],
+                "default": "ml_based"
+              },
+              "rebalance_interval_seconds": {
+                "type": "integer",
+                "minimum": 10,
+                "maximum": 3600,
+                "default": 300
+              },
+              "max_load_threshold": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 1.0,
+                "default": 0.8
+              }
+            }
+          },
+          "ml_model": {
+            "type": "object",
+            "properties": {
+              "model_name": {
+                "type": "string",
+                "default": "traffic-prediction-v1"
+              },
+              "prediction_window_minutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 15
+              },
+              "confidence_threshold": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.7
+              }
+            }
+          }
+        },
+        "required": ["load_balancing"]
+      },
+      "resource_requirements": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "limits": {
+          "cpu": "2000m",
+          "memory": "2Gi"
+        }
+      },
+      "interfaces": {
+        "e2": {
+          "required": true,
+          "version": "v3.0",
+          "functions": ["RC", "KPM"]
+        },
+        "a1": {
+          "required": true,
+          "version": "v2.1"
+        }
+      },
+      "provides": [
+        "load-balancing-service",
+        "traffic-prediction-service"
+      ],
+      "dependencies": [
+        "kpi-data-service"
+      ],
+      "permissions": [
+        "e2:control",
+        "e2:subscribe",
+        "a1:policy:create",
+        "ml:model:use"
+      ]
+    },
+    {
+      "name": "anomaly-detection-xapp",
+      "version": "1.5.0",
+      "description": "Real-time anomaly detection for network performance metrics",
+      "category": "analytics",
+      "helm_chart": {
+        "repository": "oci://registry-1.docker.io/oran",
+        "name": "anomaly-detection-xapp",
+        "version": "1.5.0"
+      },
+      "config_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "detection": {
+            "type": "object",
+            "properties": {
+              "algorithms": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["statistical", "ml_isolation_forest", "ml_autoencoder", "threshold_based"]
+                },
+                "default": ["statistical", "ml_isolation_forest"]
+              },
+              "sensitivity": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "default": "medium"
+              },
+              "window_size_minutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "default": 10
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "auto_mitigation": {
+                "type": "boolean",
+                "default": false
+              },
+              "notification_channels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["sms", "email", "webhook", "slack"]
+                },
+                "default": ["webhook"]
+              }
+            }
+          }
+        },
+        "required": ["detection"]
+      },
+      "resource_requirements": {
+        "requests": {
+          "cpu": "300m",
+          "memory": "512Mi"
+        },
+        "limits": {
+          "cpu": "1500m",
+          "memory": "2Gi"
+        }
+      },
+      "interfaces": {
+        "e2": {
+          "required": true,
+          "version": "v3.0",
+          "functions": ["KPM"]
+        },
+        "a1": {
+          "required": true,
+          "version": "v2.1"
+        }
+      },
+      "provides": [
+        "anomaly-detection-service",
+        "alert-service"
+      ],
+      "dependencies": [
+        "kpi-data-service"
+      ],
+      "permissions": [
+        "e2:subscribe",
+        "a1:policy:create",
+        "alerts:send"
+      ]
+    },
+    {
+      "name": "handover-optimization-xapp",
+      "version": "1.3.2",
+      "description": "ML-based handover parameter optimization for improved mobility experience",
+      "category": "optimization",
+      "helm_chart": {
+        "repository": "oci://registry-1.docker.io/oran",
+        "name": "handover-optimization-xapp",
+        "version": "1.3.2"
+      },
+      "config_schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "optimization": {
+            "type": "object",
+            "properties": {
+              "optimization_interval_minutes": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 1440,
+                "default": 60
+              },
+              "target_metrics": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["handover_success_rate", "handover_failure_rate", "ping_pong_rate", "radio_link_failure_rate"]
+                },
+                "default": ["handover_success_rate", "handover_failure_rate"]
+              },
+              "learning_rate": {
+                "type": "number",
+                "minimum": 0.001,
+                "maximum": 1.0,
+                "default": 0.01
+              }
+            }
+          },
+          "constraints": {
+            "type": "object",
+            "properties": {
+              "max_parameter_change_percent": {
+                "type": "number",
+                "minimum": 1.0,
+                "maximum": 50.0,
+                "default": 10.0
+              },
+              "rollback_on_degradation": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        },
+        "required": ["optimization"]
+      },
+      "resource_requirements": {
+        "requests": {
+          "cpu": "400m",
+          "memory": "1Gi"
+        },
+        "limits": {
+          "cpu": "2000m",
+          "memory": "4Gi"
+        }
+      },
+      "interfaces": {
+        "e2": {
+          "required": true,
+          "version": "v3.0",
+          "functions": ["RC", "KPM"]
+        },
+        "a1": {
+          "required": true,
+          "version": "v2.1"
+        }
+      },
+      "provides": [
+        "handover-optimization-service"
+      ],
+      "dependencies": [
+        "kpi-data-service"
+      ],
+      "permissions": [
+        "e2:control",
+        "e2:subscribe",
+        "a1:policy:create",
+        "a1:policy:update"
+      ]
+    }
+  ],
+  "deployment_templates": {
+    "development": {
+      "replicas": 1,
+      "resource_multiplier": 0.5,
+      "log_level": "debug",
+      "monitoring": {
+        "enabled": true,
+        "scrape_interval": "30s"
+      }
+    },
+    "staging": {
+      "replicas": 2,
+      "resource_multiplier": 0.8,
+      "log_level": "info",
+      "monitoring": {
+        "enabled": true,
+        "scrape_interval": "15s"
+      }
+    },
+    "production": {
+      "replicas": 3,
+      "resource_multiplier": 1.0,
+      "log_level": "warn",
+      "monitoring": {
+        "enabled": true,
+        "scrape_interval": "10s"
+      },
+      "high_availability": {
+        "enabled": true,
+        "pod_disruption_budget": {
+          "min_available": 2
+        }
+      }
+    }
+  },
+  "test_scenarios": [
+    {
+      "name": "basic_deployment",
+      "description": "Deploy a single xApp with minimal configuration",
+      "xapp": "kpi-monitoring-xapp",
+      "config": {
+        "kpi_collection": {
+          "interval_seconds": 30,
+          "metrics": ["throughput"]
+        }
+      }
+    },
+    {
+      "name": "dependency_chain",
+      "description": "Deploy xApps with dependencies",
+      "sequence": [
+        {
+          "xapp": "kpi-monitoring-xapp",
+          "config": {
+            "kpi_collection": {
+              "interval_seconds": 60
+            }
+          }
+        },
+        {
+          "xapp": "load-balancing-xapp",
+          "config": {
+            "load_balancing": {
+              "algorithm": "ml_based"
+            }
+          },
+          "depends_on": ["kpi-monitoring-xapp"]
+        }
+      ]
+    },
+    {
+      "name": "high_load_scenario",
+      "description": "Deploy multiple resource-intensive xApps",
+      "parallel": [
+        {
+          "xapp": "anomaly-detection-xapp",
+          "instances": 2,
+          "config": {
+            "detection": {
+              "algorithms": ["ml_isolation_forest", "ml_autoencoder"],
+              "sensitivity": "high"
+            }
+          }
+        },
+        {
+          "xapp": "handover-optimization-xapp",
+          "instances": 1,
+          "config": {
+            "optimization": {
+              "optimization_interval_minutes": 30
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

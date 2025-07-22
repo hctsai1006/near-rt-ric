@@ -1,0 +1,389 @@
+# Default values for O-RAN Near-RT RIC
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+  
+# Image configuration
+image:
+  registry: docker.io
+  repository: o-ran-near-rt-ric/near-rt-ric
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Deployment configuration
+replicaCount: 2
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    http: 8080
+    https: 8443
+    netconf: 830
+    e2: 2152
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: near-rt-ric.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: near-rt-ric-tls
+      hosts:
+        - near-rt-ric.local
+
+# Resource configuration
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - near-rt-ric
+          topologyKey: kubernetes.io/hostname
+
+# Security context
+podSecurityContext:
+  fsGroup: 2000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Configuration
+config:
+  logLevel: info
+  environment: production
+  
+# Interface components configuration
+interfaces:
+  e2:
+    enabled: true
+    image:
+      repository: o-ran-near-rt-ric/e2-interface
+      tag: "1.0.0"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      ports:
+        sctp1: 36421
+        sctp2: 36422
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+  a1:
+    enabled: true
+    image:
+      repository: o-ran-near-rt-ric/a1-interface
+      tag: "1.0.0"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      ports:
+        http: 8080
+        https: 8443
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+  o1:
+    enabled: true
+    image:
+      repository: o-ran-near-rt-ric/o1-interface
+      tag: "1.0.0"
+    replicaCount: 1
+    service:
+      type: ClusterIP
+      ports:
+        netconf: 830
+        netconf_tls: 6513
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+  xapp:
+    enabled: true
+    image:
+      repository: o-ran-near-rt-ric/xapp-manager
+      tag: "1.0.0"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      ports:
+        http: 8088
+        mgmt: 8089
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+# Database configuration
+postgresql:
+  enabled: true
+  architecture: standalone
+  auth:
+    database: near_rt_ric
+    username: ric_user
+    password: "ric_secure_pass"
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  metrics:
+    enabled: true
+
+# Redis configuration
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: "redis_secure_pass"
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+# Kafka configuration
+kafka:
+  enabled: true
+  replicaCount: 3
+  auth:
+    clientProtocol: plaintext
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# InfluxDB configuration (standalone)
+influxdb:
+  enabled: true
+  image:
+    repository: influxdb
+    tag: 2.7-alpine
+  auth:
+    admin:
+      username: admin
+      password: admin_password
+    user:
+      username: ric_user
+      password: ric_influx_pass
+    org: o-ran
+    bucket: metrics
+  persistence:
+    enabled: true
+    size: 50Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    server:
+      persistentVolume:
+        enabled: true
+        size: 50Gi
+      resources:
+        limits:
+          cpu: 2000m
+          memory: 4Gi
+        requests:
+          cpu: 1000m
+          memory: 2Gi
+      retention: "30d"
+    
+  grafana:
+    enabled: true
+    admin:
+      password: admin
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'o-ran'
+          orgId: 1
+          folder: 'O-RAN Near-RT RIC'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/o-ran
+
+# Persistent volume configuration
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network policies
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+# Additional labels
+labels: {}
+
+# Extra environment variables
+extraEnvVars: []
+
+# Extra volumes
+extraVolumes: []
+
+# Extra volume mounts
+extraVolumeMounts: []
+
+# Init containers
+initContainers: []
+
+# Sidecar containers
+sidecars: []
+
+# Testing configuration
+tests:
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.35"

@@ -1,0 +1,428 @@
+{{- if .Values.interfaces.a1.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+spec:
+  replicas: {{ .Values.interfaces.a1.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "near-rt-ric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: a1
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "near-rt-ric.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: a1
+    spec:
+      {{- include "near-rt-ric.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "near-rt-ric.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: a1-interface
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "near-rt-ric.interfaceImage" (dict "Values" .Values "interface" .Values.interfaces.a1) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.interfaces.a1.service.ports.http }}
+              protocol: TCP
+            - name: https
+              containerPort: {{ .Values.interfaces.a1.service.ports.https }}
+              protocol: TCP
+          env:
+            {{- include "near-rt-ric.commonEnvVars" . | nindent 12 }}
+            - name: CONFIG_PATH
+              value: "/app/configs/a1-config.yaml"
+            - name: COMPONENT
+              value: "a1-interface"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "near-rt-ric.fullname" . }}-a1-secrets
+                  key: jwt-secret
+          livenessProbe:
+            httpGet:
+              path: /a1/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /a1/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: policy-schemas
+              mountPath: /app/schemas
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            - name: tls-private
+              mountPath: /etc/ssl/private
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.interfaces.a1.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "near-rt-ric.fullname" . }}-a1-config
+        - name: policy-schemas
+          configMap:
+            name: {{ include "near-rt-ric.fullname" . }}-a1-schemas
+        - name: tls-certs
+          secret:
+            secretName: {{ include "near-rt-ric.fullname" . }}-tls
+            items:
+              - key: tls.crt
+                path: tls.crt
+        - name: tls-private
+          secret:
+            secretName: {{ include "near-rt-ric.fullname" . }}-tls
+            items:
+              - key: tls.key
+                path: tls.key
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.interfaces.a1.service.type }}
+  ports:
+    - port: {{ .Values.interfaces.a1.service.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.interfaces.a1.service.ports.https }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "near-rt-ric.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+
+---
+# A1 Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1-secrets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+type: Opaque
+data:
+  jwt-secret: {{ randAlphaNum 32 | b64enc }}
+
+---
+# A1 Policy Schemas ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1-schemas
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+data:
+  # QoS Policy Schema
+  qos-policy-schema.json: |
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "title": "QoS Policy Schema",
+      "description": "Schema for Quality of Service policies in O-RAN",
+      "properties": {
+        "slice_id": {
+          "type": "string",
+          "description": "Network slice identifier"
+        },
+        "qos_parameters": {
+          "type": "object",
+          "properties": {
+            "5qi": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255,
+              "description": "5G QoS Identifier"
+            },
+            "priority_level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 15,
+              "description": "Allocation and Retention Priority Level"
+            },
+            "packet_delay_budget": {
+              "type": "integer",
+              "description": "Packet delay budget in milliseconds"
+            },
+            "packet_error_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Packet error rate"
+            },
+            "guaranteed_flow_bit_rate": {
+              "type": "object",
+              "properties": {
+                "uplink": {
+                  "type": "integer",
+                  "description": "Uplink GFBR in Kbps"
+                },
+                "downlink": {
+                  "type": "integer", 
+                  "description": "Downlink GFBR in Kbps"
+                }
+              }
+            },
+            "maximum_flow_bit_rate": {
+              "type": "object",
+              "properties": {
+                "uplink": {
+                  "type": "integer",
+                  "description": "Uplink MFBR in Kbps"
+                },
+                "downlink": {
+                  "type": "integer",
+                  "description": "Downlink MFBR in Kbps"
+                }
+              }
+            }
+          },
+          "required": ["5qi", "priority_level"]
+        },
+        "scope": {
+          "type": "object",
+          "properties": {
+            "ue_groups": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of UE group identifiers"
+            },
+            "cell_list": {
+              "type": "array", 
+              "items": {
+                "type": "string"
+              },
+              "description": "List of cell identifiers"
+            }
+          }
+        }
+      },
+      "required": ["slice_id", "qos_parameters"]
+    }
+
+  # RRC Policy Schema
+  rrc-policy-schema.json: |
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "title": "RRC Policy Schema",
+      "description": "Schema for Radio Resource Control policies",
+      "properties": {
+        "cell_id": {
+          "type": "string",
+          "description": "Target cell identifier"
+        },
+        "rrc_parameters": {
+          "type": "object",
+          "properties": {
+            "connection_establishment": {
+              "type": "object",
+              "properties": {
+                "max_attempts": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "timer_t300": {
+                  "type": "integer",
+                  "description": "RRC connection establishment timer in ms"
+                }
+              }
+            },
+            "measurement_configuration": {
+              "type": "object", 
+              "properties": {
+                "a3_offset": {
+                  "type": "number",
+                  "description": "A3 measurement offset in dB"
+                },
+                "hysteresis": {
+                  "type": "number",
+                  "description": "Measurement hysteresis in dB"
+                },
+                "time_to_trigger": {
+                  "type": "integer",
+                  "description": "Time to trigger in ms"
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": ["cell_id", "rrc_parameters"]
+    }
+
+  # Mobility Policy Schema  
+  mobility-policy-schema.json: |
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "title": "Mobility Management Policy Schema", 
+      "description": "Schema for mobility and handover policies",
+      "properties": {
+        "handover_threshold": {
+          "type": "number",
+          "minimum": -140,
+          "maximum": -40,
+          "description": "Handover threshold in dBm"
+        },
+        "mobility_parameters": {
+          "type": "object",
+          "properties": {
+            "handover_margin": {
+              "type": "number",
+              "description": "Handover margin in dB"
+            },
+            "time_to_trigger": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5120,
+              "description": "Time to trigger handover in ms"
+            },
+            "max_report_cells": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8,
+              "description": "Maximum number of cells in measurement report"
+            },
+            "load_balancing": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "threshold": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Load balancing threshold percentage"
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": ["handover_threshold", "mobility_parameters"]
+    }
+
+---
+# Service Monitor for Prometheus scraping
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+spec:
+  selector:
+    matchLabels:
+      {{- include "near-rt-ric.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: a1
+  endpoints:
+  - port: http
+    path: /a1/metrics
+    interval: 30s
+    scrapeTimeout: 10s
+{{- end }}
+
+---
+# Horizontal Pod Autoscaler for A1 Interface
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "near-rt-ric.fullname" . }}-a1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "near-rt-ric.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a1
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "near-rt-ric.fullname" . }}-a1
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+{{- end }}

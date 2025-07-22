@@ -1,0 +1,142 @@
+{
+  "e2_setup_request": {
+    "transaction_id": 1,
+    "global_e2_node_id": {
+      "node_type": "gNB",
+      "node_id": "test-gnb-001"
+    },
+    "ran_functions": [
+      {
+        "function_id": 1,
+        "name": "RAN Control",
+        "version": "1.0",
+        "oid": "1.3.6.1.4.1.1.22.1.1",
+        "description": "RAN Control Function for testing"
+      },
+      {
+        "function_id": 2,
+        "name": "Key Performance Measurement",
+        "version": "1.0",
+        "oid": "1.3.6.1.4.1.1.22.1.2",
+        "description": "KPM Function for testing"
+      }
+    ]
+  },
+  "ric_subscription_request": {
+    "transaction_id": 2,
+    "request_id": {
+      "requestor_id": 1001,
+      "instance_id": 1
+    },
+    "ran_function_id": 1,
+    "event_triggers": {
+      "trigger_type": "periodic",
+      "period": 1000
+    },
+    "actions": [
+      {
+        "action_id": 1,
+        "action_type": "report"
+      }
+    ]
+  },
+  "ric_control_request": {
+    "transaction_id": 3,
+    "request_id": {
+      "requestor_id": 1001,
+      "instance_id": 2
+    },
+    "ran_function_id": 1,
+    "call_process_id": "Y29udHJvbC0wMDE=",
+    "control_header": "dGVzdC1jb250cm9sLWhlYWRlcg==",
+    "control_message": "dGVzdC1jb250cm9sLW1lc3NhZ2U=",
+    "control_ack_request": "ack"
+  },
+  "e2_node_configuration_update": {
+    "transaction_id": 4,
+    "global_e2_node_id": {
+      "node_type": "gNB",
+      "node_id": "test-gnb-001"
+    },
+    "e2_node_component_config_addition": [
+      {
+        "e2_node_component_type": "gNB-DU",
+        "e2_node_component_id": "du-001",
+        "e2_node_component_config": {
+          "update_outcome": "success"
+        }
+      }
+    ]
+  },
+  "e2_connection_update": {
+    "transaction_id": 5,
+    "global_e2_node_id": {
+      "node_type": "gNB",
+      "node_id": "test-gnb-001"
+    },
+    "e2_connection_update_list": [
+      {
+        "tnl_usage": "both",
+        "tnl_information": {
+          "tnl_address": "192.168.1.100",
+          "tnl_port": 36421
+        }
+      }
+    ]
+  },
+  "error_indication": {
+    "transaction_id": 6,
+    "request_id": {
+      "requestor_id": 1001,
+      "instance_id": 1
+    },
+    "ran_function_id": 1,
+    "cause": {
+      "cause_type": "protocol",
+      "cause_value": "semantic-error"
+    },
+    "criticality_diagnostics": {
+      "procedure_code": "ricSubscription",
+      "triggering_message": "initiating-message",
+      "procedure_criticality": "reject"
+    }
+  },
+  "ric_indication": {
+    "request_id": {
+      "requestor_id": 1001,
+      "instance_id": 1
+    },
+    "ran_function_id": 1,
+    "action_id": 1,
+    "indication_sn": 12345,
+    "indication_type": "report",
+    "indication_header": "aW5kaWNhdGlvbi1oZWFkZXI=",
+    "indication_message": "aW5kaWNhdGlvbi1tZXNzYWdl"
+  },
+  "ric_service_update": {
+    "transaction_id": 7,
+    "ran_functions_added": [
+      {
+        "function_id": 3,
+        "name": "Radio Connection Management",
+        "version": "1.0",
+        "oid": "1.3.6.1.4.1.1.22.1.3",
+        "description": "RCM Function for testing"
+      }
+    ],
+    "ran_functions_modified": [
+      {
+        "function_id": 1,
+        "name": "RAN Control",
+        "version": "1.1",
+        "oid": "1.3.6.1.4.1.1.22.1.1",
+        "description": "Updated RAN Control Function"
+      }
+    ],
+    "ran_functions_deleted": [
+      {
+        "function_id": 2
+      }
+    ]
+  }
+}
