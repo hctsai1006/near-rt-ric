@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/free5gc/aper"
 	"github.com/sirupsen/logrus"
 )
 
@@ -173,7 +174,7 @@ func (enc *ASN1Encoder) EncodeE2SetupResponse(resp *E2SetupResponse) ([]byte, er
 	return enc.encodePDU(pdu)
 }
 
-// DecodeE2AP_PDU decodes an ASN.1 encoded E2AP PDU
+// DecodeE2AP_PDU decodes an ASN.1 PER encoded E2AP PDU
 func (enc *ASN1Encoder) DecodeE2AP_PDU(data []byte) (*E2AP_PDU, error) {
 	start := time.Now()
 	defer func() {
@@ -181,54 +182,49 @@ func (enc *ASN1Encoder) DecodeE2AP_PDU(data []byte) (*E2AP_PDU, error) {
 	}()
 
 	var pdu E2AP_PDU
-	rest, err := asn1.Unmarshal(data, &pdu)
+	err := aper.Unmarshal(data, &pdu)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode E2AP-PDU: %w", err)
+		return nil, fmt.Errorf("failed to decode E2AP-PDU with PER decoding: %w", err)
 	}
 
-	if len(rest) > 0 {
-		enc.logger.WithField("remaining_bytes", len(rest)).Warn("Unexpected remaining bytes after PDU decoding")
-	}
-
+	enc.logger.WithField("data_length", len(data)).Debug("E2AP PDU decoded successfully")
 	return &pdu, nil
 }
 
 // Helper methods for encoding specific structures
 
 func (enc *ASN1Encoder) encodePDU(pdu *E2AP_PDU) ([]byte, error) {
-	encoded, err := asn1.Marshal(*pdu)
+	// Use APER (Aligned PER) encoding as required by O-RAN E2AP specification
+	encoded, err := aper.Marshal(*pdu)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal E2AP-PDU: %w", err)
+		return nil, fmt.Errorf("failed to marshal E2AP-PDU with PER encoding: %w", err)
 	}
 	return encoded, nil
 }
 
 func (enc *ASN1Encoder) encodeGlobalE2NodeID(nodeID GlobalE2NodeID) ([]byte, error) {
-	// Placeholder implementation - would contain actual ASN.1 encoding logic
-	// for Global E2 Node ID structure according to E2AP specification
-	encoded, err := asn1.Marshal(nodeID)
+	// Use APER (Aligned PER) encoding for Global E2 Node ID according to E2AP specification
+	encoded, err := aper.Marshal(nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode Global E2 Node ID: %w", err)
+		return nil, fmt.Errorf("failed to encode Global E2 Node ID with PER: %w", err)
 	}
 	return encoded, nil
 }
 
 func (enc *ASN1Encoder) encodeGlobalRICID(ricID GlobalRICID) ([]byte, error) {
-	// Placeholder implementation - would contain actual ASN.1 encoding logic
-	// for Global RIC ID structure according to E2AP specification
-	encoded, err := asn1.Marshal(ricID)
+	// Use APER (Aligned PER) encoding for Global RIC ID according to E2AP specification
+	encoded, err := aper.Marshal(ricID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode Global RIC ID: %w", err)
+		return nil, fmt.Errorf("failed to encode Global RIC ID with PER: %w", err)
 	}
 	return encoded, nil
 }
 
 func (enc *ASN1Encoder) encodeRANFunctions(functions []RANFunction) ([]byte, error) {
-	// Placeholder implementation - would contain actual ASN.1 encoding logic
-	// for RAN Functions structure according to E2AP specification
-	encoded, err := asn1.Marshal(functions)
+	// Use APER (Aligned PER) encoding for RAN Functions according to E2AP specification
+	encoded, err := aper.Marshal(functions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode RAN Functions: %w", err)
+		return nil, fmt.Errorf("failed to encode RAN Functions with PER: %w", err)
 	}
 	return encoded, nil
 }

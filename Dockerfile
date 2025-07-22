@@ -4,7 +4,7 @@
 # Stage 1: Build stage with full development environment
 FROM golang:1.21-alpine3.18 AS builder
 
-# Install build dependencies
+# Install build dependencies including SCTP support for O-RAN E2 interface
 RUN apk add --no-cache \
     git \
     ca-certificates \
@@ -12,6 +12,8 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     linux-headers \
+    lksctp-tools-dev \
+    lksctp-tools \
     && update-ca-certificates
 
 # Create non-root user for build
@@ -43,12 +45,22 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
     -o xapp-manager \
     ./cmd/xapp-manager/main.go
 
-# Stage 2: Runtime stage with minimal base image
-FROM scratch AS runtime
+# Stage 2: Runtime stage with minimal base image including SCTP support
+FROM alpine:3.18 AS runtime
 
-# Import timezone data and CA certificates from builder
+# Install runtime SCTP libraries for O-RAN E2 interface
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    lksctp-tools \
+    wget \
+    && update-ca-certificates
+
+# Create non-root user
+RUN adduser -D -g '' appuser
+
+# Import timezone data and CA certificates
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /etc/passwd /etc/passwd
 
 # Copy the binary from builder
@@ -64,9 +76,9 @@ USER appuser
 # Expose ports
 EXPOSE 8080 8443 830 2152
 
-# Health check
+# Health check - Use wget instead of curl for minimal image
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/near-rt-ric", "health"]
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Default command
 CMD ["/near-rt-ric"]
