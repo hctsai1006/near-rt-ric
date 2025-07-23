@@ -1,0 +1,547 @@
+# GitHub Actions Workflow for O-RAN Near-RT RIC
+# Production-grade CI/CD pipeline with comprehensive security scanning
+
+name: 🚀 Build and Deploy O-RAN Near-RT RIC
+
+on:
+  push:
+    branches: [main, develop, release/*]
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.21'
+  NODE_VERSION: '18'
+
+# Security: Restrict workflow permissions
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
+  attestations: write
+
+jobs:
+  # Security Scanning Job
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    outputs:
+      vulnerability-count: ${{ steps.scan-results.outputs.vulnerability-count }}
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            proxy.golang.org:443
+            sum.golang.org:443
+            registry.npmjs.org:443
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: 📊 Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 🔍 CodeQL Analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: go, javascript
+          queries: security-and-quality
+
+      - name: 🔍 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # Code Quality and Testing
+  test-and-quality:
+    name: 🧪 Test & Quality
+    runs-on: ubuntu-latest
+    needs: security-scan
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22']
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+
+      - name: 📦 Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+      - name: 📦 Download dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: 🔍 Lint code
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=10m --config=.golangci.yml
+
+      - name: 🧪 Run unit tests
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: 📊 Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: 🔍 Go vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: 📦 Test build
+        run: |
+          CGO_ENABLED=0 go build -v ./...
+
+  # Container Image Build and Security Scan
+  build-and-scan:
+    name: 🏗️ Build & Scan Container
+    runs-on: ubuntu-latest
+    needs: [security-scan, test-and-quality]
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: 🔑 Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📝 Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 🏗️ Build container image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ github.sha }}
+
+      - name: 🔍 Scan container image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+
+      - name: 📊 Upload container scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: ✍️ Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.tags }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: 📋 Attest SBOM
+        uses: actions/attest-sbom@v1
+        if: github.event_name != 'pull_request'
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.spdx.json
+
+  # Frontend Build and Test
+  frontend-build:
+    name: 🎨 Frontend Build
+    runs-on: ubuntu-latest
+    needs: security-scan
+    defaults:
+      run:
+        working-directory: ./frontend-dashboard
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend-dashboard/package-lock.json
+
+      - name: 📦 Install dependencies
+        run: npm ci --audit-level moderate
+
+      - name: 🔍 Lint frontend code
+        run: npm run lint
+
+      - name: 🧪 Run frontend tests
+        run: npm run test:ci
+
+      - name: 🏗️ Build frontend
+        run: npm run build
+
+      - name: 📊 Upload frontend coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./frontend-dashboard/coverage/lcov.info
+          flags: frontend
+          name: codecov-frontend
+
+  # Integration Tests
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build-and-scan]
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_USER: testuser
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: 🧪 Run integration tests
+        run: |
+          make test-integration
+        env:
+          TEST_DB_HOST: localhost
+          TEST_DB_PORT: 5432
+          TEST_DB_USER: testuser
+          TEST_DB_PASSWORD: testpass
+          TEST_DB_NAME: testdb
+          TEST_REDIS_ADDR: localhost:6379
+
+  # Performance Tests
+  performance-tests:
+    name: ⚡ Performance Tests
+    runs-on: ubuntu-latest
+    needs: [build-and-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: ⚡ Run performance benchmarks
+        run: |
+          go test -bench=. -benchmem -count=3 ./...
+
+      - name: 🔍 Load testing
+        run: |
+          # Install k6 for load testing
+          curl https://github.com/grafana/k6/releases/download/v0.45.0/k6-v0.45.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+          chmod +x k6
+          ./k6 run scripts/load-test.js
+
+  # Security Policy Enforcement
+  policy-enforcement:
+    name: 🛡️ Policy Enforcement
+    runs-on: ubuntu-latest
+    needs: [build-and-scan]
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🛡️ OPA Policy Evaluation
+        uses: open-policy-agent/opa-action@v2
+        with:
+          policy: policies/
+          input: |
+            {
+              "image_tag": "${{ needs.build-and-scan.outputs.image-tag }}",
+              "vulnerability_count": "${{ needs.security-scan.outputs.vulnerability-count }}",
+              "branch": "${{ github.ref_name }}"
+            }
+
+  # Deployment to Staging
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: [integration-tests, performance-tests, policy-enforcement]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: 🔑 Configure cluster access
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: 🚀 Deploy to staging
+        run: |
+          helm upgrade --install oran-ric-staging ./helm/oran-nearrt-ric \
+            --namespace oran-staging \
+            --create-namespace \
+            --set image.tag=${{ needs.build-and-scan.outputs.image-tag }} \
+            --set environment=staging \
+            --wait --timeout=10m
+
+      - name: 🧪 Smoke tests
+        run: |
+          kubectl wait --for=condition=ready pod -l app=oran-ric -n oran-staging --timeout=300s
+          kubectl exec -n oran-staging deployment/oran-ric -- /near-rt-ric health-check
+
+      - name: 📢 Notify deployment success
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🚀 O-RAN RIC deployed to staging successfully"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Production Deployment
+  deploy-production:
+    name: 🏭 Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [deploy-staging]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: 🔑 Configure cluster access
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: 🏭 Deploy to production
+        run: |
+          helm upgrade --install oran-ric-prod ./helm/oran-nearrt-ric \
+            --namespace oran-production \
+            --create-namespace \
+            --set image.tag=${{ needs.build-and-scan.outputs.image-tag }} \
+            --set environment=production \
+            --set resources.limits.memory=2Gi \
+            --set resources.limits.cpu=2000m \
+            --wait --timeout=15m
+
+      - name: 🧪 Production health check
+        run: |
+          kubectl wait --for=condition=ready pod -l app=oran-ric -n oran-production --timeout=600s
+          kubectl exec -n oran-production deployment/oran-ric -- /near-rt-ric health-check
+
+      - name: 📊 Create deployment metrics
+        run: |
+          curl -X POST "${{ secrets.ALERTMANAGER_URL }}/api/v1/alerts" \
+            -H "Content-Type: application/json" \
+            -d '[{
+              "labels": {
+                "alertname": "DeploymentSuccess",
+                "service": "oran-ric",
+                "environment": "production",
+                "version": "${{ github.ref_name }}"
+              },
+              "annotations": {
+                "summary": "O-RAN RIC production deployment successful",
+                "description": "Version ${{ github.ref_name }} deployed successfully"
+              }
+            }]'
+
+      - name: 📢 Notify production deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "🏭 O-RAN RIC deployed to production successfully!"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Post-deployment validation
+  post-deployment-validation:
+    name: ✅ Post-deployment Validation
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: 🔒 Harden GitHub Actions Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: 🔑 Configure cluster access
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: ✅ End-to-end tests
+        run: |
+          # Run comprehensive E2E tests
+          make test-e2e-production
+        env:
+          E2E_TARGET_URL: https://oran-ric.production.example.com
+
+      - name: 📊 Performance validation
+        run: |
+          # Validate performance metrics
+          make validate-performance-production
+
+      - name: 🔍 Security validation
+        run: |
+          # Run runtime security checks
+          make validate-security-production
+
+      - name: 📢 Final notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "✅ O-RAN RIC production validation completed successfully!"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

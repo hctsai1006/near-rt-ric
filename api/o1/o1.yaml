@@ -1,0 +1,7 @@
+# This is a placeholder for the O1 API specification.
+# TODO: Generate the complete OpenAPI schema based on the pkg/o1 package.
+openapi: 3.0.0
+info:
+  title: O1 Interface API
+  version: 1.0.0
+paths: {}

@@ -1,89 +1,239 @@
-# Makefile for O-RAN Near-RT RIC Platform with SMO and Observability Stack
+# Production-grade Makefile for O-RAN Near-RT RIC Platform
+# Comprehensive build, test, and deployment automation with security scanning
 
-# Variables
+# Build Configuration
+GO_VERSION := 1.21
+NODE_VERSION := 18
+DOCKER_BUILDKIT := 1
+BUILDX_PLATFORMS := linux/amd64,linux/arm64
+
+# Tools and Commands
 GO_CMD := go
 NPM_CMD := npm
 DOCKER_CMD := docker
 HELM_CMD := helm
 KUBECTL_CMD := kubectl
+TRIVY_CMD := trivy
+GOLANGCI_LINT_CMD := golangci-lint
 
-# Project directories
-FRONTEND_DASHBOARD_DIR := ./frontend-dashboard
+# Project Structure
+PROJECT_ROOT := $(shell pwd)
+BUILD_DIR := $(PROJECT_ROOT)/build
+BIN_DIR := $(PROJECT_ROOT)/bin
+COVERAGE_DIR := $(PROJECT_ROOT)/coverage
+DOCS_DIR := $(PROJECT_ROOT)/docs
+
+# Source Directories
+CMD_DIR := ./cmd
+PKG_DIR := ./pkg
+INTERNAL_DIR := ./internal
+FRONTEND_DIR := ./frontend-dashboard
+SCRIPTS_DIR := ./scripts
+CONFIG_DIR := ./configs
 HELM_CHARTS_DIR := ./helm
-SMO_CHART_DIR := $(HELM_CHARTS_DIR)/smo-onap
-OBSERVABILITY_CHART_DIR := $(HELM_CHARTS_DIR)/observability-stack
+K8S_DIR := ./k8s
+
+# Specific Component Directories
+E2_SIMULATOR_DIR := $(CMD_DIR)/e2-simulator
+A1_INTERFACE_DIR := $(CMD_DIR)/ric-a1
+MAIN_RIC_DIR := $(CMD_DIR)/ric
+XAPP_MANAGER_DIR := $(CMD_DIR)/xapp-manager
+
+# Chart Directories
 ORAN_CHART_DIR := $(HELM_CHARTS_DIR)/oran-nearrt-ric
+OBSERVABILITY_CHART_DIR := $(HELM_CHARTS_DIR)/observability-stack
+SMO_CHART_DIR := $(HELM_CHARTS_DIR)/smo-onap
 
-# Container registry configuration
+# Container Registry Configuration
 REGISTRY := ghcr.io
-IMAGE_NAMESPACE := $(shell echo $${GITHUB_REPOSITORY_OWNER:-local} | tr '[:upper:]' '[:lower:]')
-FRONTEND_DASHBOARD_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/frontend-dashboard
-NEAR_RT_RIC_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/near-rt-ric
+IMAGE_NAMESPACE := $(shell echo $${GITHUB_REPOSITORY_OWNER:-hctsai1006} | tr '[:upper:]' '[:lower:]')
+BASE_IMAGE_NAME := $(REGISTRY)/$(IMAGE_NAMESPACE)/near-rt-ric
 
-# Kubernetes configuration
+# Image Tags and Names
+MAIN_IMAGE := $(BASE_IMAGE_NAME):latest
+E2_SIM_IMAGE := $(BASE_IMAGE_NAME)-e2-simulator:latest
+A1_IMAGE := $(BASE_IMAGE_NAME)-a1:latest
+FRONTEND_IMAGE := $(BASE_IMAGE_NAME)-frontend:latest
+
+# Version and Build Info
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_USER := $(shell whoami)
+
+# Kubernetes Configuration
 NAMESPACE := oran-nearrt-ric
-SMO_NAMESPACE := onap
-OBSERVABILITY_NAMESPACE := observability
-RELEASE_NAME := oran-nearrt-ric
-SMO_RELEASE_NAME := smo-onap
-OBSERVABILITY_RELEASE_NAME := observability-stack
+STAGING_NAMESPACE := oran-staging
+PRODUCTION_NAMESPACE := oran-production
+RELEASE_NAME := oran-ric
+STAGING_RELEASE := oran-ric-staging
+PRODUCTION_RELEASE := oran-ric-prod
+
+# Testing Configuration
+COVERAGE_THRESHOLD := 80
+TEST_TIMEOUT := 10m
+RACE_ENABLED := true
+INTEGRATION_TEST_DB := test_oran_ric
+
+# Security Configuration
+SECURITY_SCAN_FORMAT := sarif
+VULNERABILITY_SEVERITY := HIGH,CRITICAL
+TRIVY_EXIT_CODE := 1
+
+# Performance Configuration
+BENCHMARK_TIME := 30s
+LOAD_TEST_USERS := 100
+LOAD_TEST_DURATION := 5m
 
 # Colors for output
 RED := \033[0;31m
 GREEN := \033[0;32m
 YELLOW := \033[1;33m
 BLUE := \033[0;34m
+CYAN := \033[0;36m
+MAGENTA := \033[0;35m
+WHITE := \033[1;37m
 NC := \033[0m # No Color
 
-.PHONY: help clean build test deploy deploy-all deploy-smo deploy-observability demo
+# Build flags
+LDFLAGS := -w -s \
+	-X main.version=$(VERSION) \
+	-X main.buildTime=$(BUILD_TIME) \
+	-X main.gitCommit=$(GIT_COMMIT) \
+	-X main.buildUser=$(BUILD_USER)
+
+GCFLAGS := all=-trimpath
+BUILD_TAGS := osusergo netgo static_build
+CGO_ENABLED := 1
+
+.PHONY: help clean build test security-scan deploy demo tools
+
+# Export environment variables for sub-processes
+export DOCKER_BUILDKIT
+export GO_VERSION
+export VERSION
+export BUILD_TIME
+export GIT_COMMIT
 
 # Default target
-all: clean lint test build
+all: clean tools security-scan test build ## Run complete build pipeline
 
 ## Help
-help: ## Show this help message
-	@echo "$(BLUE)O-RAN Near-RT RIC Platform - Build and Deployment$(NC)"
+help: ## Show this comprehensive help message
+	@echo "$(WHITE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(CYAN)           O-RAN Near-RT RIC Platform - Production Build System           $(NC)"
+	@echo "$(WHITE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo ""
-	@echo "$(GREEN)Available targets:$(NC)"
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo "$(GREEN)📋 Available targets:$(NC)"
+	@awk 'BEGIN {FS = ":.*##"; printf "\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-25s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(WHITE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "$(YELLOW)🔧 Build Configuration:$(NC)"
+	@echo "  Version:     $(VERSION)"
+	@echo "  Go Version:  $(GO_VERSION)"
+	@echo "  Build Time:  $(BUILD_TIME)"
+	@echo "  Git Commit:  $(GIT_COMMIT)"
+	@echo "  Registry:    $(REGISTRY)"
+	@echo ""
+	@echo "$(BLUE)📖 Examples:$(NC)"
+	@echo "  make all                 # Complete build pipeline"
+	@echo "  make build-all          # Build all components"
+	@echo "  make test-all           # Run all tests"
+	@echo "  make docker-build-all   # Build all container images"
+	@echo "  make deploy-staging     # Deploy to staging environment"
+	@echo ""
 
-##@ Development
-clean: ## Clean all build artifacts
-	@echo "$(YELLOW)Cleaning build artifacts...$(NC)"
-	@rm -rf $(FRONTEND_DASHBOARD_DIR)/dist
-	@rm -rf ./bin
-	@$(GO_CMD) clean -modcache
+##@ 🧹 Development Environment
+clean: ## Clean all build artifacts and caches
+	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
+	@rm -rf $(BIN_DIR) $(BUILD_DIR) $(COVERAGE_DIR)
+	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/node_modules/.cache
+	@$(GO_CMD) clean -cache -modcache -testcache
+	@$(DOCKER_CMD) system prune -f --volumes
+	@echo "$(GREEN)✓ Clean completed$(NC)"
 
-install-deps: ## Install all dependencies
-	@echo "$(YELLOW)Installing dependencies...$(NC)"
-	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) install
+tools: ## Install required development tools
+	@echo "$(YELLOW)🔧 Installing development tools...$(NC)"
+	@$(GO_CMD) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@$(GO_CMD) install github.com/securecodewarrior/sast-scan-runner@latest
+	@$(GO_CMD) install gotest.tools/gotestsum@latest
+	@$(GO_CMD) install github.com/onsi/ginkgo/v2/ginkgo@latest
+	@$(GO_CMD) install golang.org/x/vuln/cmd/govulncheck@latest
+	@curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+	@echo "$(GREEN)✓ Development tools installed$(NC)"
+
+deps: ## Download and verify dependencies
+	@echo "$(YELLOW)📦 Installing dependencies...$(NC)"
 	@$(GO_CMD) mod download
+	@$(GO_CMD) mod verify
+	@$(GO_CMD) mod tidy
+	@cd $(FRONTEND_DIR) && $(NPM_CMD) ci --audit-level moderate
+	@echo "$(GREEN)✓ Dependencies installed$(NC)"
 
-lint: ## Run linting for all components
-	@echo "$(YELLOW)Running linters...$(NC)"
-	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) run lint
+##@ 🔍 Code Quality
+lint: ## Run comprehensive linting
+	@echo "$(YELLOW)🔍 Running linters...$(NC)"
+	@$(GOLANGCI_LINT_CMD) run --config .golangci.yml --timeout $(TEST_TIMEOUT)
+	@cd $(FRONTEND_DIR) && $(NPM_CMD) run lint
+	@echo "$(GREEN)✓ Linting completed$(NC)"
+
+fmt: ## Format code
+	@echo "$(YELLOW)📝 Formatting code...$(NC)"
+	@$(GO_CMD) fmt ./...
+	@goimports -w -local github.com/hctsai1006/near-rt-ric .
+	@cd $(FRONTEND_DIR) && $(NPM_CMD) run format
+	@echo "$(GREEN)✓ Code formatting completed$(NC)"
+
+vet: ## Run Go vet
+	@echo "$(YELLOW)🔍 Running go vet...$(NC)"
 	@$(GO_CMD) vet ./...
+	@echo "$(GREEN)✓ Go vet completed$(NC)"
 
-test: ## Run tests for all components
-	@echo "$(YELLOW)Running tests...$(NC)"
-	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) run test
-	@$(GO_CMD) test -v -race -coverprofile=coverage.out ./...
+vuln-check: ## Check for vulnerabilities
+	@echo "$(YELLOW)🛡️ Checking for vulnerabilities...$(NC)"
+	@govulncheck ./...
+	@echo "$(GREEN)✓ Vulnerability check completed$(NC)"
 
-build: ## Build all components
-	@echo "$(YELLOW)Building all components...$(NC)"
-	@$(MAKE) build-frontend
-	@$(MAKE) build-backend
+##@ 🏗️ Build Targets
+build-all: build-backend build-frontend ## Build all components
+	@echo "$(GREEN)✓ All components built successfully$(NC)"
+
+build-backend: ## Build all Go backend services
+	@echo "$(BLUE)🏗️ Building Go backend services...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@echo "$(CYAN)  Building main RIC service...$(NC)"
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=linux GOARCH=amd64 $(GO_CMD) build \
+		-ldflags="$(LDFLAGS)" \
+		-gcflags="$(GCFLAGS)" \
+		-tags="$(BUILD_TAGS)" \
+		-o $(BIN_DIR)/near-rt-ric \
+		$(MAIN_RIC_DIR)/main.go
+	@echo "$(CYAN)  Building E2 Simulator...$(NC)"
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=linux GOARCH=amd64 $(GO_CMD) build \
+		-ldflags="$(LDFLAGS)" \
+		-gcflags="$(GCFLAGS)" \
+		-tags="$(BUILD_TAGS)" \
+		-o $(BIN_DIR)/e2-simulator \
+		$(E2_SIMULATOR_DIR)/main.go
+	@echo "$(CYAN)  Building A1 Interface...$(NC)"
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=linux GOARCH=amd64 $(GO_CMD) build \
+		-ldflags="$(LDFLAGS)" \
+		-gcflags="$(GCFLAGS)" \
+		-tags="$(BUILD_TAGS)" \
+		-o $(BIN_DIR)/ric-a1 \
+		$(A1_INTERFACE_DIR)/main.go
+	@echo "$(GREEN)✓ Backend services built successfully$(NC)"
 
 build-frontend: ## Build modern React frontend
-	@echo "$(BLUE)Building modern frontend dashboard...$(NC)"
-	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) run build
+	@echo "$(BLUE)🎨 Building frontend dashboard...$(NC)"
+	@cd $(FRONTEND_DIR) && $(NPM_CMD) run build
+	@echo "$(GREEN)✓ Frontend built successfully$(NC)"
 
-build-backend: ## Build Go backend services
-	@echo "$(BLUE)Building Go backend services...$(NC)"
-	@mkdir -p ./bin
-	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/near-rt-ric ./cmd/ric/main.go
-	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/e2-simulator ./cmd/e2-simulator/main.go
-	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/ric-a1 ./cmd/ric-a1/main.go
+build-debug: ## Build with debug symbols
+	@echo "$(BLUE)🐛 Building debug versions...$(NC)"
+	@mkdir -p $(BIN_DIR)
+	@CGO_ENABLED=1 $(GO_CMD) build -gcflags="all=-N -l" -race \
+		-o $(BIN_DIR)/near-rt-ric-debug $(MAIN_RIC_DIR)/main.go
+	@echo "$(GREEN)✓ Debug builds completed$(NC)"
 
 ##@ Container Images
 docker-build: ## Build all Docker images
