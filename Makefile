@@ -8,8 +8,6 @@ HELM_CMD := helm
 KUBECTL_CMD := kubectl
 
 # Project directories
-MAIN_DASHBOARD_DIR := ./dashboard-master/dashboard-master
-XAPP_DASHBOARD_DIR := ./xAPP_dashboard-master
 FRONTEND_DASHBOARD_DIR := ./frontend-dashboard
 HELM_CHARTS_DIR := ./helm
 SMO_CHART_DIR := $(HELM_CHARTS_DIR)/smo-onap
@@ -19,10 +17,8 @@ ORAN_CHART_DIR := $(HELM_CHARTS_DIR)/oran-nearrt-ric
 # Container registry configuration
 REGISTRY := ghcr.io
 IMAGE_NAMESPACE := $(shell echo $${GITHUB_REPOSITORY_OWNER:-local} | tr '[:upper:]' '[:lower:]')
-MAIN_DASHBOARD_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/main-dashboard
-XAPP_DASHBOARD_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/xapp-dashboard
 FRONTEND_DASHBOARD_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/frontend-dashboard
-FL_COORDINATOR_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/fl-coordinator
+NEAR_RT_RIC_IMAGE := $(REGISTRY)/$(IMAGE_NAMESPACE)/near-rt-ric
 
 # Kubernetes configuration
 NAMESPACE := oran-nearrt-ric
@@ -54,30 +50,22 @@ help: ## Show this help message
 ##@ Development
 clean: ## Clean all build artifacts
 	@echo "$(YELLOW)Cleaning build artifacts...$(NC)"
-	@rm -rf $(MAIN_DASHBOARD_DIR)/dist
-	@rm -rf $(XAPP_DASHBOARD_DIR)/dist
 	@rm -rf $(FRONTEND_DASHBOARD_DIR)/dist
 	@rm -rf ./bin
 	@$(GO_CMD) clean -modcache
 
 install-deps: ## Install all dependencies
 	@echo "$(YELLOW)Installing dependencies...$(NC)"
-	@cd $(MAIN_DASHBOARD_DIR) && $(NPM_CMD) ci
-	@cd $(XAPP_DASHBOARD_DIR) && $(NPM_CMD) ci
 	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) install
 	@$(GO_CMD) mod download
 
 lint: ## Run linting for all components
 	@echo "$(YELLOW)Running linters...$(NC)"
-	@cd $(MAIN_DASHBOARD_DIR) && $(NPM_CMD) run lint
-	@cd $(XAPP_DASHBOARD_DIR) && $(NPM_CMD) run lint
 	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) run lint
 	@$(GO_CMD) vet ./...
 
 test: ## Run tests for all components
 	@echo "$(YELLOW)Running tests...$(NC)"
-	@cd $(MAIN_DASHBOARD_DIR) && $(NPM_CMD) test -- --watchAll=false --coverage
-	@cd $(XAPP_DASHBOARD_DIR) && $(NPM_CMD) test -- --watchAll=false --coverage
 	@cd $(FRONTEND_DASHBOARD_DIR) && $(NPM_CMD) run test
 	@$(GO_CMD) test -v -race -coverprofile=coverage.out ./...
 
@@ -85,7 +73,6 @@ build: ## Build all components
 	@echo "$(YELLOW)Building all components...$(NC)"
 	@$(MAKE) build-frontend
 	@$(MAKE) build-backend
-	@$(MAKE) build-xapp-dashboard
 
 build-frontend: ## Build modern React frontend
 	@echo "$(BLUE)Building modern frontend dashboard...$(NC)"
@@ -94,27 +81,20 @@ build-frontend: ## Build modern React frontend
 build-backend: ## Build Go backend services
 	@echo "$(BLUE)Building Go backend services...$(NC)"
 	@mkdir -p ./bin
-	@CGO_ENABLED=0 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/main-dashboard $(MAIN_DASHBOARD_DIR)/src/app/backend/dashboard.go
-	@CGO_ENABLED=0 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/fl-coordinator $(MAIN_DASHBOARD_DIR)/cmd/fl-coordinator/main.go
-
-build-xapp-dashboard: ## Build xApp dashboard
-	@echo "$(BLUE)Building xApp dashboard...$(NC)"
-	@cd $(XAPP_DASHBOARD_DIR) && $(NPM_CMD) run build
+	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/near-rt-ric ./cmd/ric/main.go
+	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/e2-simulator ./cmd/e2-simulator/main.go
+	@CGO_ENABLED=1 GOOS=linux $(GO_CMD) build -ldflags="-w -s" -o ./bin/ric-a1 ./cmd/ric-a1/main.go
 
 ##@ Container Images
 docker-build: ## Build all Docker images
 	@echo "$(YELLOW)Building Docker images...$(NC)"
-	@$(DOCKER_CMD) build -t $(MAIN_DASHBOARD_IMAGE):latest -f $(MAIN_DASHBOARD_DIR)/Dockerfile .
-	@$(DOCKER_CMD) build -t $(XAPP_DASHBOARD_IMAGE):latest -f $(XAPP_DASHBOARD_DIR)/Dockerfile .
+	@$(DOCKER_CMD) build -t $(NEAR_RT_RIC_IMAGE):latest -f Dockerfile .
 	@$(DOCKER_CMD) build -t $(FRONTEND_DASHBOARD_IMAGE):latest -f $(FRONTEND_DASHBOARD_DIR)/Dockerfile .
-	@$(DOCKER_CMD) build -t $(FL_COORDINATOR_IMAGE):latest -f $(MAIN_DASHBOARD_DIR)/Dockerfile.fl .
 
 docker-push: ## Push Docker images to registry
 	@echo "$(YELLOW)Pushing Docker images...$(NC)"
-	@$(DOCKER_CMD) push $(MAIN_DASHBOARD_IMAGE):latest
-	@$(DOCKER_CMD) push $(XAPP_DASHBOARD_IMAGE):latest
+	@$(DOCKER_CMD) push $(NEAR_RT_RIC_IMAGE):latest
 	@$(DOCKER_CMD) push $(FRONTEND_DASHBOARD_IMAGE):latest
-	@$(DOCKER_CMD) push $(FL_COORDINATOR_IMAGE):latest
 
 ##@ Helm Charts
 helm-lint: ## Lint all Helm charts

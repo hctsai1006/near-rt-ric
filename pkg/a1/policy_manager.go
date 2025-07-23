@@ -19,11 +19,7 @@ type PolicyManager struct {
 	config  *config.A1Config
 	logger  *logrus.Logger
 	metrics *monitoring.MetricsCollector
-
-	// Storage
-	policyTypes     map[PolicyTypeID]*PolicyType
-	policyInstances map[PolicyID]*PolicyInstance
-	mutex           sync.RWMutex
+	db      *pgxpool.Pool
 
 	// Event handling
 	eventHandlers []PolicyEventHandler
@@ -51,15 +47,14 @@ type PolicyEventHandler interface {
 }
 
 // NewPolicyManager creates a new policy manager
-func NewPolicyManager(config *config.A1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *PolicyManager {
+func NewPolicyManager(config *config.A1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector, db *pgxpool.Pool) *PolicyManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &PolicyManager{
 		config:             config,
 		logger:             logger.WithField("component", "policy-manager"),
 		metrics:            metrics,
-		policyTypes:        make(map[PolicyTypeID]*PolicyType),
-		policyInstances:    make(map[PolicyID]*PolicyInstance),
+		db:                 db,
 		ctx:                ctx,
 		cancel:             cancel,
 		maxPolicyTypes:     100,  // Default limit
@@ -107,22 +102,9 @@ func (pm *PolicyManager) Stop(ctx context.Context) error {
 
 // CreatePolicyType creates a new policy type
 func (pm *PolicyManager) CreatePolicyType(req *PolicyTypeCreateRequest) (*PolicyType, error) {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
 	// Validate policy type ID
 	if !req.PolicyTypeID.IsValid() {
 		return nil, fmt.Errorf("invalid policy type ID")
-	}
-
-	// Check if policy type already exists
-	if _, exists := pm.policyTypes[req.PolicyTypeID]; exists {
-		return nil, fmt.Errorf("policy type %s already exists", req.PolicyTypeID)
-	}
-
-	// Check limits
-	if len(pm.policyTypes) >= pm.maxPolicyTypes {
-		return nil, fmt.Errorf("maximum number of policy types (%d) reached", pm.maxPolicyTypes)
 	}
 
 	// Validate policy schema
@@ -141,8 +123,13 @@ func (pm *PolicyManager) CreatePolicyType(req *PolicyTypeCreateRequest) (*Policy
 		UpdatedAt:    time.Now(),
 	}
 
-	// Store policy type
-	pm.policyTypes[req.PolicyTypeID] = policyType
+	// Store policy type in the database
+	_, err := pm.db.Exec(pm.ctx,
+		"INSERT INTO policy_types (id, name, description, schema, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+		policyType.PolicyTypeID, policyType.Name, policyType.Description, policyType.PolicySchema, policyType.CreatedAt, policyType.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create policy type: %w", err)
+	}
 
 	pm.logger.WithFields(logrus.Fields{
 		"policy_type_id": req.PolicyTypeID,
@@ -165,11 +152,11 @@ func (pm *PolicyManager) CreatePolicyType(req *PolicyTypeCreateRequest) (*Policy
 
 // GetPolicyType retrieves a policy type by ID
 func (pm *PolicyManager) GetPolicyType(policyTypeID PolicyTypeID) (*PolicyType, error) {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
-
-	policyType, exists := pm.policyTypes[policyTypeID]
-	if !exists {
+	policyType := &PolicyType{}
+	err := pm.db.QueryRow(pm.ctx,
+		"SELECT id, name, description, schema, created_at, updated_at FROM policy_types WHERE id = $1",
+		policyTypeID).Scan(&policyType.PolicyTypeID, &policyType.Name, &policyType.Description, &policyType.PolicySchema, &policyType.CreatedAt, &policyType.UpdatedAt)
+	if err != nil {
 		return nil, fmt.Errorf("policy type %s not found", policyTypeID)
 	}
 
@@ -178,11 +165,21 @@ func (pm *PolicyManager) GetPolicyType(policyTypeID PolicyTypeID) (*PolicyType, 
 
 // GetAllPolicyTypes returns all policy types
 func (pm *PolicyManager) GetAllPolicyTypes() []*PolicyType {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
+	rows, err := pm.db.Query(pm.ctx, "SELECT id, name, description, schema, created_at, updated_at FROM policy_types")
+	if err != nil {
+		pm.logger.WithError(err).Error("Failed to get all policy types")
+		return []*PolicyType{}
+	}
+	defer rows.Close()
 
-	policyTypes := make([]*PolicyType, 0, len(pm.policyTypes))
-	for _, policyType := range pm.policyTypes {
+	policyTypes := make([]*PolicyType, 0)
+	for rows.Next() {
+		policyType := &PolicyType{}
+		err := rows.Scan(&policyType.PolicyTypeID, &policyType.Name, &policyType.Description, &policyType.PolicySchema, &policyType.CreatedAt, &policyType.UpdatedAt)
+		if err != nil {
+			pm.logger.WithError(err).Error("Failed to scan policy type")
+			continue
+		}
 		policyTypes = append(policyTypes, policyType)
 	}
 
@@ -191,23 +188,24 @@ func (pm *PolicyManager) GetAllPolicyTypes() []*PolicyType {
 
 // DeletePolicyType deletes a policy type
 func (pm *PolicyManager) DeletePolicyType(policyTypeID PolicyTypeID) error {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
-	// Check if policy type exists
-	if _, exists := pm.policyTypes[policyTypeID]; !exists {
-		return fmt.Errorf("policy type %s not found", policyTypeID)
-	}
-
 	// Check if there are active policy instances of this type
-	for _, policy := range pm.policyInstances {
-		if policy.PolicyTypeID == policyTypeID && policy.Status != PolicyStatusDeleted {
-			return fmt.Errorf("cannot delete policy type %s: active policy instances exist", policyTypeID)
-		}
+	var count int
+	err := pm.db.QueryRow(pm.ctx, "SELECT COUNT(*) FROM policy_instances WHERE policy_type_id = $1 AND status != 'DELETED'", policyTypeID).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check for active policy instances: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("cannot delete policy type %s: active policy instances exist", policyTypeID)
 	}
 
 	// Delete policy type
-	delete(pm.policyTypes, policyTypeID)
+	cmdTag, err := pm.db.Exec(pm.ctx, "DELETE FROM policy_types WHERE id = $1", policyTypeID)
+	if err != nil {
+		return fmt.Errorf("failed to delete policy type: %w", err)
+	}
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("policy type %s not found", policyTypeID)
+	}
 
 	pm.logger.WithField("policy_type_id", policyTypeID).Info("Policy type deleted")
 
@@ -227,28 +225,15 @@ func (pm *PolicyManager) DeletePolicyType(policyTypeID PolicyTypeID) error {
 
 // CreatePolicyInstance creates a new policy instance
 func (pm *PolicyManager) CreatePolicyInstance(policyTypeID PolicyTypeID, policyID PolicyID, req *PolicyInstanceCreateRequest, userID string) (*PolicyInstance, error) {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
 	// Validate policy ID
 	if !policyID.IsValid() {
 		return nil, fmt.Errorf("invalid policy ID")
 	}
 
 	// Check if policy type exists
-	policyType, exists := pm.policyTypes[policyTypeID]
-	if !exists {
-		return nil, fmt.Errorf("policy type %s not found", policyTypeID)
-	}
-
-	// Check if policy instance already exists
-	if _, exists := pm.policyInstances[policyID]; exists {
-		return nil, fmt.Errorf("policy instance %s already exists", policyID)
-	}
-
-	// Check limits
-	if len(pm.policyInstances) >= pm.maxPolicyInstances {
-		return nil, fmt.Errorf("maximum number of policy instances (%d) reached", pm.maxPolicyInstances)
+	policyType, err := pm.GetPolicyType(policyTypeID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate policy data against schema
@@ -265,10 +250,17 @@ func (pm *PolicyManager) CreatePolicyInstance(policyTypeID PolicyTypeID, policyI
 		TargetNearRTRIC: req.TargetNearRTRIC,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
+		CreatedBy:       userID,
+		UpdatedBy:       userID,
 	}
 
-	// Store policy instance
-	pm.policyInstances[policyID] = policy
+	// Store policy instance in the database
+	_, err = pm.db.Exec(pm.ctx,
+		"INSERT INTO policy_instances (id, policy_type_id, policy_data, target, priority, description, status, created_at, updated_at, created_by, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+		policy.PolicyID, policy.PolicyTypeID, policy.PolicyData, policy.TargetNearRTRIC, 0, "", policy.Status, policy.CreatedAt, policy.UpdatedAt, policy.CreatedBy, policy.UpdatedBy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create policy instance: %w", err)
+	}
 
 	pm.logger.WithFields(logrus.Fields{
 		"policy_id":      policyID,
@@ -300,11 +292,11 @@ func (pm *PolicyManager) CreatePolicyInstance(policyTypeID PolicyTypeID, policyI
 
 // GetPolicyInstance retrieves a policy instance by ID
 func (pm *PolicyManager) GetPolicyInstance(policyID PolicyID) (*PolicyInstance, error) {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
-
-	policy, exists := pm.policyInstances[policyID]
-	if !exists {
+	policy := &PolicyInstance{}
+	err := pm.db.QueryRow(pm.ctx,
+		"SELECT id, policy_type_id, policy_data, target, priority, description, status, created_at, updated_at, created_by, updated_by FROM policy_instances WHERE id = $1",
+		policyID).Scan(&policy.PolicyID, &policy.PolicyTypeID, &policy.PolicyData, &policy.TargetNearRTRIC, &policy.Priority, &policy.Description, &policy.Status, &policy.CreatedAt, &policy.UpdatedAt, &policy.CreatedBy, &policy.UpdatedBy)
+	if err != nil {
 		return nil, fmt.Errorf("policy instance %s not found", policyID)
 	}
 
@@ -313,14 +305,22 @@ func (pm *PolicyManager) GetPolicyInstance(policyID PolicyID) (*PolicyInstance, 
 
 // GetPolicyInstancesByType returns all policy instances of a specific type
 func (pm *PolicyManager) GetPolicyInstancesByType(policyTypeID PolicyTypeID) []*PolicyInstance {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
+	rows, err := pm.db.Query(pm.ctx, "SELECT id, policy_type_id, policy_data, target, priority, description, status, created_at, updated_at, created_by, updated_by FROM policy_instances WHERE policy_type_id = $1 AND status != 'DELETED'", policyTypeID)
+	if err != nil {
+		pm.logger.WithError(err).Error("Failed to get policy instances by type")
+		return []*PolicyInstance{}
+	}
+	defer rows.Close()
 
 	policies := make([]*PolicyInstance, 0)
-	for _, policy := range pm.policyInstances {
-		if policy.PolicyTypeID == policyTypeID && policy.Status != PolicyStatusDeleted {
-			policies = append(policies, policy)
+	for rows.Next() {
+		policy := &PolicyInstance{}
+		err := rows.Scan(&policy.PolicyID, &policy.PolicyTypeID, &policy.PolicyData, &policy.TargetNearRTRIC, &policy.Priority, &policy.Description, &policy.Status, &policy.CreatedAt, &policy.UpdatedAt, &policy.CreatedBy, &policy.UpdatedBy)
+		if err != nil {
+			pm.logger.WithError(err).Error("Failed to scan policy instance")
+			continue
 		}
+		policies = append(policies, policy)
 	}
 
 	return policies
@@ -328,14 +328,22 @@ func (pm *PolicyManager) GetPolicyInstancesByType(policyTypeID PolicyTypeID) []*
 
 // GetAllPolicyInstances returns all policy instances
 func (pm *PolicyManager) GetAllPolicyInstances() []*PolicyInstance {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
+	rows, err := pm.db.Query(pm.ctx, "SELECT id, policy_type_id, policy_data, target, priority, description, status, created_at, updated_at, created_by, updated_by FROM policy_instances WHERE status != 'DELETED'")
+	if err != nil {
+		pm.logger.WithError(err).Error("Failed to get all policy instances")
+		return []*PolicyInstance{}
+	}
+	defer rows.Close()
 
-	policies := make([]*PolicyInstance, 0, len(pm.policyInstances))
-	for _, policy := range pm.policyInstances {
-		if policy.Status != PolicyStatusDeleted {
-			policies = append(policies, policy)
+	policies := make([]*PolicyInstance, 0)
+	for rows.Next() {
+		policy := &PolicyInstance{}
+		err := rows.Scan(&policy.PolicyID, &policy.PolicyTypeID, &policy.PolicyData, &policy.TargetNearRTRIC, &policy.Priority, &policy.Description, &policy.Status, &policy.CreatedAt, &policy.UpdatedAt, &policy.CreatedBy, &policy.UpdatedBy)
+		if err != nil {
+			pm.logger.WithError(err).Error("Failed to scan policy instance")
+			continue
 		}
+		policies = append(policies, policy)
 	}
 
 	return policies
@@ -343,13 +351,10 @@ func (pm *PolicyManager) GetAllPolicyInstances() []*PolicyInstance {
 
 // UpdatePolicyInstance updates an existing policy instance
 func (pm *PolicyManager) UpdatePolicyInstance(policyID PolicyID, req *PolicyInstanceUpdateRequest, userID string) (*PolicyInstance, error) {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
-	// Check if policy instance exists
-	policy, exists := pm.policyInstances[policyID]
-	if !exists {
-		return nil, fmt.Errorf("policy instance %s not found", policyID)
+	// Get existing policy instance
+	policy, err := pm.GetPolicyInstance(policyID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if policy is in a state that allows updates
@@ -358,9 +363,9 @@ func (pm *PolicyManager) UpdatePolicyInstance(policyID PolicyID, req *PolicyInst
 	}
 
 	// Get policy type for validation
-	policyType, exists := pm.policyTypes[policy.PolicyTypeID]
-	if !exists {
-		return nil, fmt.Errorf("policy type %s not found", policy.PolicyTypeID)
+	policyType, err := pm.GetPolicyType(policy.PolicyTypeID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate new policy data
@@ -371,12 +376,21 @@ func (pm *PolicyManager) UpdatePolicyInstance(policyID PolicyID, req *PolicyInst
 	// Store old status for event
 	oldStatus := policy.Status
 
-	// Update policy instance
+	// Update policy instance fields
 	policy.PolicyData = req.PolicyData
 	policy.TargetNearRTRIC = req.TargetNearRTRIC
 	policy.Status = PolicyStatusNotEnforced // Reset to not enforced after update
 	policy.UpdatedAt = time.Now()
+	policy.UpdatedBy = userID
 	policy.EnforcedAt = nil
+
+	// Update policy instance in the database
+	_, err = pm.db.Exec(pm.ctx,
+		"UPDATE policy_instances SET policy_data = $1, target = $2, status = $3, updated_at = $4, updated_by = $5 WHERE id = $6",
+		policy.PolicyData, policy.TargetNearRTRIC, policy.Status, policy.UpdatedAt, policy.UpdatedBy, policy.PolicyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update policy instance: %w", err)
+	}
 
 	pm.logger.WithFields(logrus.Fields{
 		"policy_id":      policyID,
@@ -409,13 +423,10 @@ func (pm *PolicyManager) UpdatePolicyInstance(policyID PolicyID, req *PolicyInst
 
 // DeletePolicyInstance deletes a policy instance
 func (pm *PolicyManager) DeletePolicyInstance(policyID PolicyID, userID string) error {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
-	// Check if policy instance exists
-	policy, exists := pm.policyInstances[policyID]
-	if !exists {
-		return fmt.Errorf("policy instance %s not found", policyID)
+	// Get existing policy instance to get old status
+	policy, err := pm.GetPolicyInstance(policyID)
+	if err != nil {
+		return err
 	}
 
 	// Check if policy is already deleted
@@ -423,12 +434,14 @@ func (pm *PolicyManager) DeletePolicyInstance(policyID PolicyID, userID string) 
 		return fmt.Errorf("policy instance %s is already deleted", policyID)
 	}
 
-	// Store old status for event
 	oldStatus := policy.Status
 
-	// Mark policy as deleted
-	policy.Status = PolicyStatusDeleted
-	policy.UpdatedAt = time.Now()
+	// Mark policy as deleted in the database
+	_, err = pm.db.Exec(pm.ctx, "UPDATE policy_instances SET status = $1, updated_at = $2, updated_by = $3 WHERE id = $4",
+		PolicyStatusDeleted, time.Now(), userID, policyID)
+	if err != nil {
+		return fmt.Errorf("failed to delete policy instance: %w", err)
+	}
 
 	pm.logger.WithFields(logrus.Fields{
 		"policy_id":      policyID,

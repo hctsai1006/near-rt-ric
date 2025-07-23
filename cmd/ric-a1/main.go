@@ -4,12 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/gorilla/mux"
+	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/a1"
+	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,11 +24,10 @@ const (
 
 var (
 	listenAddr = flag.String("listen-addr", "0.0.0.0", "Listen address for A1 interface")
-	listenPort = flag.Int("listen-port", 10020, "Listen port for A1 interface") 
+	listenPort = flag.Int("listen-port", 10020, "Listen port for A1 interface")
 	tlsEnabled = flag.Bool("tls-enabled", true, "Enable TLS")
 	tlsCert    = flag.String("tls-cert", "/certs/tls.crt", "TLS certificate file")
 	tlsKey     = flag.String("tls-key", "/certs/tls.key", "TLS private key file")
-	authEnabled = flag.Bool("auth-enabled", true, "Enable authentication")
 	logLevel   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	showVersion = flag.Bool("version", false, "Show version information")
 )
@@ -32,13 +35,11 @@ var (
 func main() {
 	flag.Parse()
 
-	// Show version if requested
 	if *showVersion {
 		fmt.Printf("%s version %s\n", appName, version)
 		os.Exit(0)
 	}
 
-	// Configure logging
 	logger := logrus.New()
 	level, err := logrus.ParseLevel(*logLevel)
 	if err != nil {
@@ -54,44 +55,79 @@ func main() {
 		"listen_addr": *listenAddr,
 		"listen_port": *listenPort,
 		"tls_enabled": *tlsEnabled,
-		"auth_enabled": *authEnabled,
 	}).Info("Starting O-RAN A1 Interface")
 
-	// Create A1 interface configuration
-	config := &a1.A1InterfaceConfig{
-		ListenAddress:         *listenAddr,
-		ListenPort:            *listenPort,
-		TLSEnabled:            *tlsEnabled,
-		TLSCertPath:           *tlsCert,
-		TLSKeyPath:            *tlsKey,
-		AuthenticationEnabled: *authEnabled,
-		RequestTimeout:        30 * time.Second,
-		MaxRequestSize:        1024 * 1024, // 1MB
-		RateLimitEnabled:      true,
-		RateLimitPerMinute:    1000,
-		NotificationEnabled:   true,
-		DatabaseURL:           "", // Using in-memory for now
-		LogLevel:              *logLevel,
+	// Load configuration
+	cfg, err := config.LoadA1Config()
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to load configuration")
 	}
 
-	// Create repository (in-memory for now)
-	repository := a1.NewInMemoryA1Repository()
+	// Create metrics collector
+	metrics := monitoring.NewMetricsCollector("near-rt-ric", "a1-interface")
+	metrics.RegisterA1Metrics()
 
-	// Create and start A1 interface
-	a1Interface := a1.NewA1Interface(config, repository)
-
-	if err := a1Interface.Start(); err != nil {
-		logger.WithError(err).Fatal("Failed to start A1 interface")
+	// Create database connection
+	db, err := db.NewPostgresDB(&cfg.Database, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to connect to database")
 	}
+	defer db.Close()
+
+	// Create authentication service
+	authService, err := a1.NewAuthService(cfg, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to create authentication service")
+	}
+
+	// Create policy manager
+	policyManager := a1.NewPolicyManager(cfg, logger, metrics, db.Pool)
+	if err := policyManager.Start(context.Background()); err != nil {
+		logger.WithError(err).Fatal("Failed to start policy manager")
+	}
+
+	// Create ML model manager
+	modelManager := a1.NewMLModelManager(cfg, logger, metrics, db.Pool)
+
+	// Create enrichment manager
+	enrichmentManager := a1.NewEnrichmentManager(cfg, logger, metrics, db.Pool)
+
+	// Create API handlers
+	apiHandlers := a1.NewAPIHandlers(policyManager, modelManager, enrichmentManager, authService, logger, metrics)
+
+	// Create router and setup routes
+	router := mux.NewRouter()
+	apiHandlers.SetupRoutes(router)
+
+	// Create HTTP server
+	addr := fmt.Sprintf("%s:%d", *listenAddr, *listenPort)
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      router,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		logger.WithField("address", addr).Info("A1 interface listening")
+		var err error
+		if *tlsEnabled {
+			err = server.ListenAndServeTLS(*tlsCert, *tlsKey)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			logger.WithError(err).Fatal("Failed to start server")
+		}
+	}()
 
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	logger.Info("O-RAN A1 Interface started successfully")
-
-	// Start status reporting goroutine
-	go statusReporter(a1Interface, repository, logger)
 
 	// Wait for shutdown signal
 	sig := <-sigChan
@@ -101,59 +137,13 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	shutdownChan := make(chan error, 1)
-	go func() {
-		shutdownChan <- a1Interface.Stop()
-	}()
-
-	select {
-	case err := <-shutdownChan:
-		if err != nil {
-			logger.WithError(err).Error("Error during shutdown")
-			os.Exit(1)
-		}
-		logger.Info("O-RAN A1 Interface shutdown completed successfully")
-	case <-shutdownCtx.Done():
-		logger.Error("Shutdown timeout exceeded")
-		os.Exit(1)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.WithError(err).Error("Error during server shutdown")
 	}
-}
 
-// statusReporter periodically reports the status of the A1 interface
-func statusReporter(a1Interface *a1.A1Interface, repository a1.A1Repository, logger *logrus.Logger) {
-	ticker := time.NewTicker(5 * time.Minute) // Report every 5 minutes
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			status := a1Interface.GetStatus()
-			
-			// Get repository statistics if supported
-			var repoStats map[string]interface{}
-			if repo, ok := repository.(*a1.InMemoryA1Repository); ok {
-				repoStats = repo.GetStatistics()
-			}
-
-			logger.WithFields(logrus.Fields{
-				"status":                status.Status,
-				"policy_types":          status.PolicyTypes,
-				"total_policies":        status.Policies,
-				"active_policies":       status.ActivePolicies,
-				"repository_statistics": repoStats,
-			}).Info("O-RAN A1 Interface status report")
-
-			// Log policy types and their usage
-			if policyTypes, err := repository.ListPolicyTypes(); err == nil {
-				for _, policyType := range policyTypes {
-					policies, _ := repository.ListPoliciesByType(policyType.PolicyTypeID)
-					logger.WithFields(logrus.Fields{
-						"policy_type_id": policyType.PolicyTypeID,
-						"name":           policyType.Name,
-						"policy_count":   len(policies),
-					}).Debug("Policy type details")
-				}
-			}
-		}
+	if err := policyManager.Stop(shutdownCtx); err != nil {
+		logger.WithError(err).Error("Error during policy manager shutdown")
 	}
+
+	logger.Info("O-RAN A1 Interface shutdown completed successfully")
 }

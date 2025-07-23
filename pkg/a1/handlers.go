@@ -14,21 +14,25 @@ import (
 
 // APIHandlers contains all A1 REST API handlers
 type APIHandlers struct {
-	policyManager *PolicyManager
-	authService   *AuthService
-	logger        *logrus.Logger
-	metrics       *monitoring.MetricsCollector
-	startTime     time.Time
+	policyManager     *PolicyManager
+	modelManager      *MLModelManager
+	enrichmentManager *EnrichmentManager
+	authService       *AuthService
+	logger            *logrus.Logger
+	metrics           *monitoring.MetricsCollector
+	startTime         time.Time
 }
 
 // NewAPIHandlers creates new API handlers
-func NewAPIHandlers(policyManager *PolicyManager, authService *AuthService, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *APIHandlers {
+func NewAPIHandlers(policyManager *PolicyManager, modelManager *MLModelManager, enrichmentManager *EnrichmentManager, authService *AuthService, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *APIHandlers {
 	return &APIHandlers{
-		policyManager: policyManager,
-		authService:   authService,
-		logger:        logger.WithField("component", "a1-handlers"),
-		metrics:       metrics,
-		startTime:     time.Now(),
+		policyManager:     policyManager,
+		modelManager:      modelManager,
+		enrichmentManager: enrichmentManager,
+		authService:       authService,
+		logger:            logger.WithField("component", "a1-handlers"),
+		metrics:           metrics,
+		startTime:         time.Now(),
 	}
 }
 
@@ -397,68 +401,147 @@ func (h *APIHandlers) GetPolicyStatus(w http.ResponseWriter, r *http.Request) {
 	h.writeJSONResponse(w, http.StatusOK, status)
 }
 
-// Enrichment Information handlers (placeholder implementations)
+// Enrichment Information handlers
 
 func (h *APIHandlers) GetEITypes(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	defer h.recordMetrics(r, start, http.StatusOK)
-	h.writeJSONResponse(w, http.StatusOK, []string{})
+	// In a real implementation, we would have a way to manage EI types
+	h.writeJSONResponse(w, http.StatusOK, []string{"ue_location", "network_performance"})
 }
 
 func (h *APIHandlers) GetEIType(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotFound)
-	h.writeErrorResponse(w, http.StatusNotFound, "EI Type not found", "")
+	defer h.recordMetrics(r, start, http.StatusOK)
+	// In a real implementation, we would have a way to manage EI types
+	vars := mux.Vars(r)
+	eiTypeID := vars["ei_type_id"]
+	h.writeJSONResponse(w, http.StatusOK, map[string]string{"id": eiTypeID, "name": "UE Location", "description": "User Equipment Location Information"})
 }
 
 func (h *APIHandlers) GetEIJobs(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	defer h.recordMetrics(r, start, http.StatusOK)
-	h.writeJSONResponse(w, http.StatusOK, []string{})
+	jobs := h.enrichmentManager.GetAllEIJobs()
+	h.writeJSONResponse(w, http.StatusOK, jobs)
 }
 
 func (h *APIHandlers) GetEIJob(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotFound)
-	h.writeErrorResponse(w, http.StatusNotFound, "EI Job not found", "")
+	vars := mux.Vars(r)
+	jobID := vars["ei_job_id"]
+
+	job, err := h.enrichmentManager.GetEIJob(jobID)
+	if err != nil {
+		h.recordMetrics(r, start, http.StatusNotFound)
+		h.writeErrorResponse(w, http.StatusNotFound, "EI Job not found", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusOK)
+	h.writeJSONResponse(w, http.StatusOK, job)
 }
 
 func (h *APIHandlers) CreateEIJob(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotImplemented)
-	h.writeErrorResponse(w, http.StatusNotImplemented, "EI Jobs not implemented", "")
+	var req struct {
+		Type  string `json:"type"`
+		Owner string `json:"owner"`
+	}
+	if err := h.decodeJSONRequest(r, &req); err != nil {
+		h.recordMetrics(r, start, http.StatusBadRequest)
+		h.writeErrorResponse(w, http.StatusBadRequest, "Invalid request body", err.Error())
+		return
+	}
+
+	job, err := h.enrichmentManager.CreateEIJob(req.Type, req.Owner)
+	if err != nil {
+		h.recordMetrics(r, start, http.StatusInternalServerError)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to create EI job", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusCreated)
+	h.writeJSONResponse(w, http.StatusCreated, job)
 }
 
 func (h *APIHandlers) DeleteEIJob(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotImplemented)
-	h.writeErrorResponse(w, http.StatusNotImplemented, "EI Jobs not implemented", "")
+	vars := mux.Vars(r)
+	jobID := vars["ei_job_id"]
+
+	if err := h.enrichmentManager.DeleteEIJob(jobID); err != nil {
+		h.recordMetrics(r, start, http.StatusNotFound)
+		h.writeErrorResponse(w, http.StatusNotFound, "EI Job not found", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 
-// ML Model handlers (placeholder implementations)
+// ML Model handlers
 
 func (h *APIHandlers) GetMLModels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	defer h.recordMetrics(r, start, http.StatusOK)
-	h.writeJSONResponse(w, http.StatusOK, []string{})
+	models := h.modelManager.GetAllModels()
+	h.writeJSONResponse(w, http.StatusOK, models)
 }
 
 func (h *APIHandlers) GetMLModel(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotFound)
-	h.writeErrorResponse(w, http.StatusNotFound, "ML Model not found", "")
+	vars := mux.Vars(r)
+	modelID := vars["model_id"]
+
+	model, err := h.modelManager.GetModel(modelID)
+	if err != nil {
+		h.recordMetrics(r, start, http.StatusNotFound)
+		h.writeErrorResponse(w, http.StatusNotFound, "ML Model not found", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusOK)
+	h.writeJSONResponse(w, http.StatusOK, model)
 }
 
 func (h *APIHandlers) DeployMLModel(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotImplemented)
-	h.writeErrorResponse(w, http.StatusNotImplemented, "ML Models not implemented", "")
+	var req struct {
+		Name        string `json:"name"`
+		Version     string `json:"version"`
+		Description string `json:"description"`
+	}
+	if err := h.decodeJSONRequest(r, &req); err != nil {
+		h.recordMetrics(r, start, http.StatusBadRequest)
+		h.writeErrorResponse(w, http.StatusBadRequest, "Invalid request body", err.Error())
+		return
+	}
+
+	model, err := h.modelManager.DeployModel(req.Name, req.Version, req.Description)
+	if err != nil {
+		h.recordMetrics(r, start, http.StatusInternalServerError)
+		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to deploy ML model", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusAccepted)
+	h.writeJSONResponse(w, http.StatusAccepted, model)
 }
 
 func (h *APIHandlers) DeleteMLModel(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	defer h.recordMetrics(r, start, http.StatusNotImplemented)
-	h.writeErrorResponse(w, http.StatusNotImplemented, "ML Models not implemented", "")
+	vars := mux.Vars(r)
+	modelID := vars["model_id"]
+
+	if err := h.modelManager.DeleteModel(modelID); err != nil {
+		h.recordMetrics(r, start, http.StatusNotFound)
+		h.writeErrorResponse(w, http.StatusNotFound, "ML Model not found", err.Error())
+		return
+	}
+
+	h.recordMetrics(r, start, http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Helper methods
