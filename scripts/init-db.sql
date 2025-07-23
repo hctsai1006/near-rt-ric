@@ -30,3 +30,22 @@ CREATE TABLE IF NOT EXISTS ml_models (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ei_jobs (
+    id VARCHAR(255) PRIMARY KEY,
+    type VARCHAR(255) NOT NULL,
+    owner VARCHAR(255) NOT NULL,
+    status VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(255) PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    roles TEXT[] NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);

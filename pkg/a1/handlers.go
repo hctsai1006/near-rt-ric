@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // APIHandlers contains all A1 REST API handlers
@@ -121,7 +122,7 @@ func (h *APIHandlers) GetStatus(w http.ResponseWriter, r *http.Request) {
 // GenerateToken generates a new JWT token
 func (h *APIHandlers) GenerateToken(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	
+
 	var req TokenRequest
 	if err := h.decodeJSONRequest(r, &req); err != nil {
 		h.recordMetrics(r, start, http.StatusBadRequest)
@@ -129,16 +130,25 @@ func (h *APIHandlers) GenerateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In a real implementation, validate credentials against user store
-	// For demo purposes, accept hardcoded credentials
-	if req.Username != "admin" || req.Password != "password" {
+	// Get user from the database
+	user := &User{}
+	err := h.policyManager.db.QueryRow(r.Context(), "SELECT id, username, password_hash, email, roles FROM users WHERE username = $1", req.Username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Email, &user.Roles)
+	if err != nil {
+		h.recordMetrics(r, start, http.StatusUnauthorized)
+		h.writeErrorResponse(w, http.StatusUnauthorized, "Invalid credentials", "")
+		return
+	}
+
+	// Compare the provided password with the stored hash
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
+	if err != nil {
 		h.recordMetrics(r, start, http.StatusUnauthorized)
 		h.writeErrorResponse(w, http.StatusUnauthorized, "Invalid credentials", "")
 		return
 	}
 
 	// Generate token
-	token, err := h.authService.GenerateToken("admin-id", req.Username, "admin@example.com", []string{"admin"})
+	token, err := h.authService.GenerateToken(user.ID, user.Username, user.Email, user.Roles)
 	if err != nil {
 		h.recordMetrics(r, start, http.StatusInternalServerError)
 		h.writeErrorResponse(w, http.StatusInternalServerError, "Failed to generate token", err.Error())

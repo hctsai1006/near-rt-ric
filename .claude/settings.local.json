@@ -75,7 +75,8 @@
       "Bash(true)",
       "Bash(./scripts/validate-ci.sh:*)",
       "Bash(timeout 30s go build -v ./cmd/ric/)",
-      "Bash(CGO_ENABLED=0 GOOS=linux go build -ldflags=\"-w -s\" -o ./bin/near-rt-ric ./cmd/ric/main.go)"
+      "Bash(CGO_ENABLED=0 GOOS=linux go build -ldflags=\"-w -s\" -o ./bin/near-rt-ric ./cmd/ric/main.go)",
+      "Bash(CGO_ENABLED=0 go build -o ./bin/near-rt-ric ./cmd/ric/main.go)"
     ],
     "deny": []
   },

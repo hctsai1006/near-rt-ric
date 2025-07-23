@@ -17,8 +17,7 @@ type EnrichmentManager struct {
 	config  *config.A1Config
 	logger  *logrus.Logger
 	metrics *monitoring.MetricsCollector
-	jobs    map[string]*EIJob
-	mutex   sync.RWMutex
+	db      *pgxpool.Pool
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
@@ -34,13 +33,13 @@ type EIJob struct {
 }
 
 // NewEnrichmentManager creates a new enrichment manager
-func NewEnrichmentManager(config *config.A1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *EnrichmentManager {
+func NewEnrichmentManager(config *config.A1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector, db *pgxpool.Pool) *EnrichmentManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &EnrichmentManager{
 		config:  config,
 		logger:  logger.WithField("component", "enrichment-manager"),
 		metrics: metrics,
-		jobs:    make(map[string]*EIJob),
+		db:      db,
 		ctx:     ctx,
 		cancel:  cancel,
 	}
@@ -48,9 +47,6 @@ func NewEnrichmentManager(config *config.A1Config, logger *logrus.Logger, metric
 
 // CreateEIJob creates a new enrichment information job
 func (m *EnrichmentManager) CreateEIJob(jobType, owner string) (*EIJob, error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
 	job := &EIJob{
 		ID:        uuid.New().String(),
 		Type:      jobType,
@@ -60,7 +56,13 @@ func (m *EnrichmentManager) CreateEIJob(jobType, owner string) (*EIJob, error) {
 		UpdatedAt: time.Now(),
 	}
 
-	m.jobs[job.ID] = job
+	_, err := m.db.Exec(m.ctx,
+		"INSERT INTO ei_jobs (id, type, owner, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)",
+		job.ID, job.Type, job.Owner, job.Status, job.CreatedAt, job.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create EI job: %w", err)
+	}
+
 	m.logger.WithFields(logrus.Fields{
 		"job_id":   job.ID,
 		"type":     jobType,
@@ -72,11 +74,11 @@ func (m *EnrichmentManager) CreateEIJob(jobType, owner string) (*EIJob, error) {
 
 // GetEIJob retrieves a job by its ID
 func (m *EnrichmentManager) GetEIJob(id string) (*EIJob, error) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	job, ok := m.jobs[id]
-	if !ok {
+	job := &EIJob{}
+	err := m.db.QueryRow(m.ctx,
+		"SELECT id, type, owner, status, created_at, updated_at FROM ei_jobs WHERE id = $1",
+		id).Scan(&job.ID, &job.Type, &job.Owner, &job.Status, &job.CreatedAt, &job.UpdatedAt)
+	if err != nil {
 		return nil, fmt.Errorf("job with ID %s not found", id)
 	}
 	return job, nil
@@ -84,11 +86,21 @@ func (m *EnrichmentManager) GetEIJob(id string) (*EIJob, error) {
 
 // GetAllEIJobs returns all jobs
 func (m *EnrichmentManager) GetAllEIJobs() []*EIJob {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
+	rows, err := m.db.Query(m.ctx, "SELECT id, type, owner, status, created_at, updated_at FROM ei_jobs")
+	if err != nil {
+		m.logger.WithError(err).Error("Failed to get all EI jobs")
+		return []*EIJob{}
+	}
+	defer rows.Close()
 
 	var jobs []*EIJob
-	for _, job := range m.jobs {
+	for rows.Next() {
+		job := &EIJob{}
+		err := rows.Scan(&job.ID, &job.Type, &job.Owner, &job.Status, &job.CreatedAt, &job.UpdatedAt)
+		if err != nil {
+			m.logger.WithError(err).Error("Failed to scan EI job")
+			continue
+		}
 		jobs = append(jobs, job)
 	}
 	return jobs
@@ -96,14 +108,13 @@ func (m *EnrichmentManager) GetAllEIJobs() []*EIJob {
 
 // DeleteEIJob deletes a job by its ID
 func (m *EnrichmentManager) DeleteEIJob(id string) error {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	if _, ok := m.jobs[id]; !ok {
+	cmdTag, err := m.db.Exec(m.ctx, "DELETE FROM ei_jobs WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete EI job: %w", err)
+	}
+	if cmdTag.RowsAffected() == 0 {
 		return fmt.Errorf("job with ID %s not found", id)
 	}
-
-	delete(m.jobs, id)
 	m.logger.WithField("job_id", id).Info("Deleted EI job")
 	return nil
 }
