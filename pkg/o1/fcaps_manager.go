@@ -15,7 +15,7 @@ import (
 // FCAPSManager manages FCAPS (Fault, Configuration, Accounting, Performance, Security) operations
 type FCAPSManager struct {
 	config  *config.O1Config
-	logger  *logrus.Logger
+	logger  *logrus.Entry
 	metrics *monitoring.MetricsCollector
 
 	// Fault Management
@@ -64,12 +64,12 @@ type FCAPSEventHandler interface {
 }
 
 // NewFCAPSManager creates a new FCAPS manager
-func NewFCAPSManager(cfg *config.O1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *FCAPSManager {
+func NewFCAPSManager(cfg *config.O1Config, baseLogger *logrus.Logger, metrics *monitoring.MetricsCollector) *FCAPSManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &FCAPSManager{
 		config:              cfg,
-		logger:              logger.WithField("component", "fcaps-manager"),
+		logger:              baseLogger.WithField("component", "fcaps-manager"),
 		metrics:             metrics,
 		alarms:              make(map[string]*Alarm),
 		configurations:      make(map[string]*ConfigurationChange),
@@ -187,7 +187,7 @@ func (fm *FCAPSManager) ClearAlarm(alarmID string) error {
 	now := time.Now()
 	alarm.Status = AlarmCleared
 	alarm.ClearedTime = &now
-	alarm.Severity = AlarmCleared
+	alarm.Severity = AlarmWarning
 
 	fm.logger.WithFields(logrus.Fields{
 		"alarm_id":       alarmID,

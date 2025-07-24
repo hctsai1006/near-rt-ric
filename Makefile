@@ -148,7 +148,7 @@ clean: ## Clean all build artifacts and caches
 	@rm -rf $(BIN_DIR) $(BUILD_DIR) $(COVERAGE_DIR)
 	@rm -rf $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/node_modules/.cache
 	@$(GO_CMD) clean -cache -modcache -testcache
-	@$(DOCKER_CMD) system prune -f --volumes
+	@#$(DOCKER_CMD) system prune -f --volumes
 	@echo "$(GREEN)✓ Clean completed$(NC)"
 
 tools: ## Install required development tools

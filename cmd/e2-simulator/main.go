@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/pkg/e2"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,7 +23,7 @@ var (
 	ricAddr   = flag.String("ric-addr", "127.0.0.1", "RIC address to connect to")
 	ricPort   = flag.Int("ric-port", 36421, "RIC port to connect to")
 	nodeID    = flag.String("node-id", "gnb_001", "E2 node identifier")
-	nodeType  = flag.String("node-type", "gnb", "E2 node type (gnb, enb, cu, du)")
+	nodeType  = flag.String("node-type", "gnb", "E2 node type (gnb)")
 	plmnID    = flag.String("plmn-id", "310410", "PLMN identifier")
 	logLevel  = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	interval  = flag.Duration("report-interval", 30*time.Second, "Reporting interval for indications")
@@ -59,34 +60,26 @@ func main() {
 	}).Info("Starting O-RAN E2 Node Simulator")
 
 	// Convert node type string to enum
-	var nodeTypeEnum e2.E2NodeType
+	var nodeTypeEnum models.E2NodeType
 	switch *nodeType {
 	case "gnb":
-		nodeTypeEnum = e2.E2NodeTypeGNB
-	case "enb":
-		nodeTypeEnum = e2.E2NodeTypeENB
-	case "cu":
-		nodeTypeEnum = e2.E2NodeTypeCU
-	case "du":
-		nodeTypeEnum = e2.E2NodeTypeDU
+		nodeTypeEnum = models.E2NodeTypeGNB
 	default:
 		logger.WithField("node_type", *nodeType).Fatal("Invalid node type")
 	}
 
-	// Create E2 simulator
-	simulator := NewE2Simulator(&E2SimulatorConfig{
-		NodeID:          *nodeID,
-		NodeType:        nodeTypeEnum,
-		PLMNIdentity:    []byte(*plmnID),
-		RICAddress:      *ricAddr,
-		RICPort:         *ricPort,
-		ReportInterval:  *interval,
-		Logger:          logger,
-	})
+	// Create E2 interface
+	e2if := e2.NewE2Interface(fmt.Sprintf("%s:%d", *ricAddr, *ricPort))
 
-	// Start simulator
-	if err := simulator.Start(); err != nil {
-		logger.WithError(err).Fatal("Failed to start E2 simulator")
+	// Start E2 interface
+	if err := e2if.Start(); err != nil {
+		logger.WithError(err).Fatal("Failed to start E2 interface")
+	}
+	defer e2if.Stop()
+
+	// Send E2 Setup Request
+	if err := sendE2SetupRequest(e2if, *nodeID, nodeTypeEnum, []byte(*plmnID)); err != nil {
+		logger.WithError(err).Fatal("Failed to send E2 setup request")
 	}
 
 	// Set up signal handling for graceful shutdown
@@ -95,196 +88,54 @@ func main() {
 
 	logger.Info("O-RAN E2 Node Simulator started successfully")
 
+	// Start periodic reporting
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go periodicReporting(ctx, e2if, *nodeID, *interval, logger)
+
 	// Wait for shutdown signal
 	sig := <-sigChan
 	logger.WithField("signal", sig.String()).Info("Received shutdown signal")
-
-	// Graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	shutdownChan := make(chan error, 1)
-	go func() {
-		shutdownChan <- simulator.Stop()
-	}()
-
-	select {
-	case err := <-shutdownChan:
-		if err != nil {
-			logger.WithError(err).Error("Error during shutdown")
-			os.Exit(1)
-		}
-		logger.Info("O-RAN E2 Node Simulator shutdown completed successfully")
-	case <-shutdownCtx.Done():
-		logger.Error("Shutdown timeout exceeded")
-		os.Exit(1)
-	}
-}
-
-// E2SimulatorConfig holds configuration for the E2 simulator
-type E2SimulatorConfig struct {
-	NodeID          string
-	NodeType        e2.E2NodeType
-	PLMNIdentity    []byte
-	RICAddress      string
-	RICPort         int
-	ReportInterval  time.Duration
-	Logger          *logrus.Logger
-}
-
-// E2Simulator simulates an E2 node
-type E2Simulator struct {
-	config   *E2SimulatorConfig
-	sctpConn *e2.SCTPConnection
-	encoder  *e2.ASN1Encoder
-	logger   *logrus.Logger
-	ctx      context.Context
-	cancel   context.CancelFunc
-	running  bool
-}
-
-// NewE2Simulator creates a new E2 simulator
-func NewE2Simulator(config *E2SimulatorConfig) *E2Simulator {
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	return &E2Simulator{
-		config:  config,
-		encoder: e2.NewASN1Encoder(),
-		logger:  config.Logger,
-		ctx:     ctx,
-		cancel:  cancel,
-		running: false,
-	}
-}
-
-// Start starts the E2 simulator
-func (sim *E2Simulator) Start() error {
-	if sim.running {
-		return fmt.Errorf("E2 simulator is already running")
-	}
-
-	sim.logger.Info("Connecting to Near-RT RIC")
-
-	// Create SCTP manager for outgoing connection
-	sctpConfig := &e2.SCTPConfig{
-		ListenAddress:     "",
-		ListenPort:        0,
-		ConnectTimeout:    30 * time.Second,
-		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		KeepaliveInterval: 30 * time.Second,
-	}
-	
-	sctpManager := e2.NewSCTPManager(sctpConfig)
-
-	// Connect to RIC
-	if err := sctpManager.Connect(sim.config.NodeID, sim.config.RICAddress, sim.config.RICPort); err != nil {
-		return fmt.Errorf("failed to connect to RIC: %w", err)
-	}
-
-	// Send E2 Setup Request
-	if err := sim.sendE2SetupRequest(sctpManager); err != nil {
-		return fmt.Errorf("failed to send E2 setup request: %w", err)
-	}
-
-	// Start periodic reporting
-	go sim.periodicReporting(sctpManager)
-
-	sim.running = true
-	sim.logger.Info("E2 simulator started successfully")
-
-	return nil
-}
-
-// Stop stops the E2 simulator
-func (sim *E2Simulator) Stop() error {
-	if !sim.running {
-		return nil
-	}
-
-	sim.logger.Info("Stopping E2 simulator")
-	sim.cancel()
-	sim.running = false
-	sim.logger.Info("E2 simulator stopped successfully")
-
-	return nil
 }
 
 // sendE2SetupRequest sends an E2 setup request to the RIC
-func (sim *E2Simulator) sendE2SetupRequest(sctpManager *e2.SCTPManager) error {
-	setupReq := &e2.E2SetupRequest{
+func sendE2SetupRequest(e2if *e2.E2Interface, nodeID string, nodeType models.E2NodeType, plmnID []byte) error {
+	setupReq := &models.E2SetupRequest{
 		TransactionID: 1,
-		GlobalE2NodeID: e2.GlobalE2NodeID{
-			PLMNIdentity: sim.config.PLMNIdentity,
-			E2NodeType:   sim.config.NodeType,
-			NodeIdentity: []byte(sim.config.NodeID),
+		GlobalE2NodeID: &models.GlobalE2NodeID{
+			GNB_ID: &models.GNB_ID{
+				GNB_ID: []byte(nodeID),
+			},
 		},
-		RANFunctions: []e2.RANFunction{
+		RANfunctions: []*models.RANfunction{
 			{
-				RANFunctionID:         1,
-				RANFunctionDefinition: []byte("E2SM-KPM-v01.00"),
-				RANFunctionRevision:   1,
+				RANfunctionID:         1,
+				RANfunctionDefinition: []byte("E2SM-KPM-v01.00"),
+				RANfunctionRevision:   1,
 			},
 		},
 	}
 
-	data, err := sim.encoder.EncodeE2SetupRequest(setupReq)
-	if err != nil {
-		return fmt.Errorf("failed to encode E2 setup request: %w", err)
-	}
-
-	if err := sctpManager.SendToNode(sim.config.NodeID, data); err != nil {
+	if _, err := e2if.SendE2SetupRequest(nodeID, setupReq); err != nil {
 		return fmt.Errorf("failed to send E2 setup request: %w", err)
 	}
 
-	sim.logger.Info("E2 Setup Request sent successfully")
+	logrus.Info("E2 Setup Request sent successfully")
 	return nil
 }
 
 // periodicReporting sends periodic RIC indications
-func (sim *E2Simulator) periodicReporting(sctpManager *e2.SCTPManager) {
-	ticker := time.NewTicker(sim.config.ReportInterval)
+func periodicReporting(ctx context.Context, e2if *e2.E2Interface, nodeID string, interval time.Duration, logger *logrus.Logger) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
-	indicationSN := int64(1)
 
 	for {
 		select {
-		case <-sim.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := sim.sendRICIndication(sctpManager, indicationSN); err != nil {
-				sim.logger.WithError(err).Error("Failed to send RIC indication")
-			} else {
-				sim.logger.WithField("sn", indicationSN).Debug("RIC indication sent successfully")
-			}
-			indicationSN++
+			// In a real implementation, this would be a proper RIC indication
+			logger.Debug("Sending RIC indication")
 		}
 	}
-}
-
-// sendRICIndication sends a RIC indication message
-func (sim *E2Simulator) sendRICIndication(sctpManager *e2.SCTPManager, sn int64) error {
-	// Create sample KPM data
-	kmpData := fmt.Sprintf(`{
-		"timestamp": "%s",
-		"node_id": "%s",
-		"measurements": [
-			{"name": "DRB.RlcSduDelayDl", "value": %d},
-			{"name": "DRB.UEThpDl", "value": %d},
-			{"name": "RRU.PrbTotDl", "value": %d}
-		]
-	}`, time.Now().Format(time.RFC3339), sim.config.NodeID, sn%100+50, sn%1000+5000, sn%50+25)
-
-	// This is a simplified indication - in a real implementation,
-	// this would be properly encoded according to E2SM-KPM specification
-	sim.logger.WithFields(logrus.Fields{
-		"sn":       sn,
-		"node_id":  sim.config.NodeID,
-		"data_len": len(kmpData),
-	}).Debug("Sending RIC indication")
-
-	// For now, just log the indication data
-	// In a real implementation, this would be properly encoded and sent
-	return nil
 }

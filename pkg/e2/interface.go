@@ -64,11 +64,11 @@ func (e *E2Interface) handleConnection(conn net.Conn) {
 func (e *E2Interface) SendE2SetupRequest(nodeID string, req *models.E2SetupRequest) (*models.E2Response, error) {
 	// Simulate network delay and processing
 	time.Sleep(2 * time.Millisecond)
-	return &models.E2Response{ProcedureCode: models.E2_SETUP_RESPONSE}, nil
+	return &models.E2Response{ProcedureCode: 1}, nil
 }
 
 // CreateSubscription creates a RIC subscription.
 // This is a dummy implementation.
 func (e *E2Interface) CreateSubscription(nodeID string, req *models.RICSubscriptionRequest) (*models.E2Response, error) {
-	return &models.E2Response{ProcedureCode: models.RIC_SUBSCRIPTION_RESPONSE}, nil
+	return &models.E2Response{ProcedureCode: 12}, nil
 }

@@ -179,7 +179,12 @@ func (s *SCTPServer) Start(ctx context.Context) error {
 	}
 	
 	// Create SCTP listener with O-RAN specific parameters
-	listener, err := sctp.ListenSCTP("sctp", listenAddr)
+	initMsg := sctp.InitMsg{
+		NumOstreams:  uint16(s.config.Streams),
+		MaxInstreams: uint16(s.config.Streams),
+		MaxAttempts:  uint16(s.config.MaxAttempts),
+	}
+	listener, err := sctp.ListenSCTPExt("sctp", listenAddr, initMsg)
 	if err != nil {
 		s.running.Store(false)
 		return fmt.Errorf("failed to create SCTP listener: %w", err)

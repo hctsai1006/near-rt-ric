@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// xApp Framework Types according to O-RAN xApp specification
+// XApp Framework Types according to O-RAN xApp specification
 // Based on O-RAN.WG2.xApp-v03.00
 
 // XAppID represents a unique xApp identifier
@@ -235,7 +235,7 @@ type RuntimePort struct {
 	Name            string                 `json:"name,omitempty" yaml:"name,omitempty"`
 	Port            int32                  `json:"port" yaml:"port"`
 	Protocol        string                 `json:"protocol,omitempty" yaml:"protocol,omitempty"`
-	ExposedPort     int32                  `json:"exposed_port,omitempty" yaml:"exposed_port,omitempty"`
+	ExposedPort     int32                  `json:"exposed_port,omitempty" yaml:"json:"exposed_port,omitempty"`
 }
 
 // XAppHealthStatus represents the health status of an xApp
@@ -261,7 +261,7 @@ const (
 type HealthCheck struct {
 	Type            string                 `json:"type" yaml:"type"` // http, tcp, exec
 	URL             string                 `json:"url,omitempty" yaml:"url,omitempty"`
-	Port            int32                  `json:"port,omitempty" yaml:"port,omitempty"`
+	Port            int32                  `json:"port" yaml:"port"`
 	Path            string                 `json:"path,omitempty" yaml:"path,omitempty"`
 	Command         []string               `json:"command,omitempty" yaml:"command,omitempty"`
 	IntervalSeconds int32                  `json:"interval_seconds,omitempty" yaml:"interval_seconds,omitempty"`
@@ -429,7 +429,7 @@ type DeploymentStrategy struct {
 // RollingUpdateDeployment describes the rolling update strategy
 type RollingUpdateDeployment struct {
 	MaxUnavailable  *int32                 `json:"max_unavailable,omitempty" yaml:"max_unavailable,omitempty"`
-	MaxSurge        *int32                 `json:"max_surge,omitempty" yaml:"max_surge,omitempty"`
+	MaxSurge        *int32                 `json:"max_surge,omitempty" yaml:"json:"max_surge,omitempty"`
 }
 
 // XApp Events
@@ -464,6 +464,156 @@ const (
 	EventDependencyFailed = "DEPENDENCY_FAILED"
 )
 
+// XAppRepository defines the interface for storing and retrieving xApp related data.
+type XAppRepository interface {
+	SaveDescriptor(descriptor *XAppDescriptor) error
+	GetDescriptor(name, version string) (*XAppDescriptor, error)
+	DeleteDescriptor(name, version string) error
+	ListDescriptors() ([]*XAppDescriptor, error)
+
+	SaveInstance(instance *XAppInstance) error
+	GetInstance(id string) (*XAppInstance, error)
+	UpdateInstance(instance *XAppInstance) error
+	DeleteInstance(id string) error
+	ListInstances() ([]*XAppInstance, error)
+
+	SaveEvent(event *XAppEvent) error
+	GetEvents(xappID string, limit int) ([]*XAppEvent, error)
+
+	SaveConflict(conflict *XAppConflict) error
+	GetConflict(id string) (*XAppConflict, error)
+	UpdateConflict(conflict *XAppConflict) error
+	ListConflicts() ([]*XAppConflict, error)
+}
+
+// XAppOrchestrator defines the interface for deploying and managing xApp instances.
+type XAppOrchestrator interface {
+	DeployXApp(descriptor *XAppDescriptor, config map[string]interface{}) error
+	UndeployXApp(instanceID string) error
+	CheckHealth(instanceID string) (*XAppHealth, error)
+	GetMetrics(instanceID string) (*XAppMetrics, error)
+	StartHealthMonitoring(instanceID string) error
+	StopHealthMonitoring(instanceID string) error
+}
+
+// XAppRegistry defines the interface for registering and discovering xApp services.
+type XAppRegistry interface {
+	Register(instance *XAppInstance) error
+	Unregister(instanceID string) error
+	Discover(query map[string]string) ([]*XAppInstance, error)
+}
+
+// XAppFrameworkConfig holds configuration for the xApp framework.
+type XAppFrameworkConfig struct {
+	ConflictDetection bool
+	HealthCheckInterval time.Duration
+	MetricsInterval time.Duration
+	Namespace string
+}
+
+// XAppConflict represents a conflict detected between xApps.
+type XAppConflict struct {
+	ID           string
+	XAppID1      string
+	XAppID2      string
+	ConflictType ConflictType
+	Description  string
+	DetectedAt   time.Time
+	ResolvedAt   *time.Time
+	Status       ConflictStatus
+	Resolution   ConflictResolution
+}
+
+// ConflictType defines the type of conflict.
+type ConflictType string
+
+const (
+	ConflictTypeResource  ConflictType = "RESOURCE"
+	ConflictTypeInterface ConflictType = "INTERFACE"
+	ConflictTypePolicy    ConflictType = "POLICY"
+)
+
+// ConflictStatus defines the status of a conflict.
+type ConflictStatus string
+
+const (
+	ConflictStatusDetected  ConflictStatus = "DETECTED"
+	ConflictStatusResolving ConflictStatus = "RESOLVING"
+	ConflictStatusResolved  ConflictStatus = "RESOLVED"
+	ConflictStatusFailed    ConflictStatus = "FAILED"
+)
+
+// ConflictResolution defines the type of resolution applied to a conflict.
+type ConflictResolution string
+
+const (
+	ResolutionNone        ConflictResolution = "NONE"
+	ResolutionPriority    ConflictResolution = "PRIORITY"
+	ResolutionNegotiation ConflictResolution = "NEGOTIATION"
+	ResolutionTermination ConflictResolution = "TERMINATION"
+	ResolutionResource    ConflictResolution = "RESOURCE"
+)
+
+// XAppDescriptor represents an xApp descriptor.
+type XAppDescriptor struct {
+	Name string
+	Version string
+	Image string
+	Namespace string
+	Resources XAppResourceRequirements
+	Interfaces XAppInterfaces
+}
+
+// XAppHealth represents the health of an xApp.
+type XAppHealth struct {
+	Status string
+	Checks map[string]HealthCheck
+}
+
+// XAppManager defines the interface for managing xApps.
+type XAppManager interface {
+	Deploy(descriptor *XAppDescriptor, config map[string]interface{}) (*XAppInstance, error)
+	Undeploy(xappID string) error
+	Start(xappID string) error
+	Stop(xappID string) error
+	Restart(xappID string) error
+	List() ([]*XAppInstance, error)
+	Get(xappID string) (*XAppInstance, error)
+	GetStatus(xappID string) (XAppStatus, error)
+	GetHealth(xappID string) (*XAppHealth, error)
+	GetMetrics(xappID string) (*XAppMetrics, error)
+	UpdateConfig(xappID string, config map[string]interface{}) error
+	GetConfig(xappID string) (map[string]interface{}, error)
+	DetectConflicts(xappID string) ([]*XAppConflict, error)
+	ResolveConflict(conflictID string, resolution ConflictResolution) error
+	GetConflicts() ([]*XAppConflict, error)
+	GetEvents(xappID string) ([]*XAppEvent, error)
+	Subscribe(eventTypes []XAppEventType) (<-chan *XAppEvent, error)
+	Cleanup()
+}
+
+// XAppEventType defines the type of an xApp event.
+type XAppEventType string
+
+const (
+	XAppEventDeployment   XAppEventType = "DEPLOYMENT"
+	XAppEventShutdown     XAppEventType = "SHUTDOWN"
+	XAppEventStartup      XAppEventType = "STARTUP"
+	XAppEventHealthCheck  XAppEventType = "HEALTH_CHECK"
+	XAppEventConfigChange XAppEventType = "CONFIG_CHANGE"
+	XAppEventError        XAppEventType = "ERROR"
+)
+
+// EventSeverity defines the severity of an event.
+type EventSeverity string
+
+const (
+	EventSeverityInfo    EventSeverity = "INFO"
+	EventSeverityWarning EventSeverity = "WARNING"
+	EventSeverityError   EventSeverity = "ERROR"
+	EventSeverityCritical EventSeverity = "CRITICAL"
+)
+
 // Utility methods
 
 // String methods for type safety and debugging
@@ -483,9 +633,7 @@ func (s XAppLifecycleState) String() string {
 	return string(s)
 }
 
-func (t XAppType) String() string {
-	return string(t)
-}
+
 
 func (h HealthState) String() string {
 	return string(h)
@@ -522,17 +670,6 @@ func (s XAppLifecycleState) IsValid() bool {
 	switch s {
 	case LifecycleCreated, LifecycleInstalled, LifecycleConfigured,
 		 LifecycleActive, LifecycleInactive, LifecycleDeleted:
-		return true
-	default:
-		return false
-	}
-}
-
-// IsValid checks if an xApp type is valid
-func (t XAppType) IsValid() bool {
-	switch t {
-	case XAppTypeControl, XAppTypeOptimizer, XAppTypeAnalytics,
-		 XAppTypeML, XAppTypeOrchestrator:
 		return true
 	default:
 		return false

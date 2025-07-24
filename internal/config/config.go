@@ -8,6 +8,92 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// LoggingConfig holds all configuration for logging
+type LoggingConfig struct {
+	Level      string
+	Format     string
+	Output     string
+	Structured bool
+	File       FileLoggingConfig
+	Remote     RemoteLoggingConfig
+}
+
+// FileLoggingConfig holds file logging configuration
+type FileLoggingConfig struct {
+	Enabled    bool
+	Filename   string
+	MaxSize    int
+	MaxBackups int
+	MaxAge     int
+	Compress   bool
+}
+
+// RemoteLoggingConfig holds remote logging configuration
+type RemoteLoggingConfig struct {
+	Enabled  bool
+	Endpoint string
+	Protocol string
+}
+
+// XAppConfig holds all configuration for xApps
+type XAppConfig struct {
+	Manager    XAppManagerConfig
+	Database   DatabaseConfig
+	Cache      CacheConfig
+	Kubernetes KubernetesConfig
+	Registry   XAppRegistryConfig
+	Health     HealthConfig
+	LogLevel   string
+}
+
+// XAppManagerConfig holds xApp Manager configuration
+type XAppManagerConfig struct {
+	Host             string
+	Port             int
+	DeploymentEngine string
+}
+
+// CacheConfig holds cache configuration
+type CacheConfig struct {
+	Type  string
+	Redis RedisConfig
+}
+
+// RedisConfig holds Redis cache configuration
+type RedisConfig struct {
+	URL         string
+	MaxRetries  int
+	DialTimeout int
+}
+
+// KubernetesConfig holds Kubernetes configuration
+type KubernetesConfig struct {
+	Namespace      string
+	InCluster      bool
+	ConfigPath     string
+	ServiceAccount string
+}
+
+// XAppRegistryConfig holds xApp registry configuration
+type XAppRegistryConfig struct {
+	Type string
+	Helm HelmRegistryConfig
+}
+
+// HelmRegistryConfig holds Helm registry configuration
+type HelmRegistryConfig struct {
+	URL      string
+	Username string
+	Password string
+}
+
+// HealthConfig holds health check configuration
+type HealthConfig struct {
+	CheckInterval    int
+	FailureThreshold int
+	TimeoutPerCheck  int
+}
+
 // A1Config holds all configuration for the A1 interface
 type A1Config struct {
 	ListenAddress string
@@ -89,16 +175,56 @@ type SCTPConfig struct {
 
 // O1Config holds all configuration for the O1 interface
 type O1Config struct {
-	NETCONF NETCONFConfig
-	LogLevel string
+	Enabled            bool
+	Port               int
+	BindAddress        string
+	SSH                SSHConfig
+	NETCONF            NETCONFConfig
+	YANG               YANGConfig
+	FileManagement     FileManagementConfig
+	SoftwareManagement SoftwareManagementConfig
+	LogLevel           string
+}
+
+// SSHConfig holds SSH server configuration
+type SSHConfig struct {
+	HostKeyPath        string
+	AuthorizedKeysPath string
+	Timeout            int
+	MaxConnections     int
+}
+
+// YANGConfig holds YANG models configuration
+type YANGConfig struct {
+	ModulesPath    string
+	ValidateConfig bool
+}
+
+// FileManagementConfig holds file management configuration
+type FileManagementConfig struct {
+	Enabled     bool
+	UploadPath  string
+	MaxFileSize int
+}
+
+// SoftwareManagementConfig holds software management configuration
+type SoftwareManagementConfig struct {
+	Enabled      bool
+	PackagePath  string
+	InstallPath  string
+	BackupPath   string
+	MaxPackages  int
 }
 
 // NETCONFConfig holds NETCONF server configuration
 type NETCONFConfig struct {
-	ListenAddress string
-	Port          int
-	TLSPort       int
-	TLS           TLSConfig
+	ListenAddress  string
+	Port           int
+	TLSPort        int
+	TLS            TLSConfig
+	Capabilities   []string
+	SessionTimeout int
+	MaxSessions    int
 }
 
 // TLSConfig holds TLS configuration
@@ -106,6 +232,84 @@ type TLSConfig struct {
 	Enabled  bool
 	CertFile string
 	KeyFile  string
+}
+
+// LoadLoggingConfig loads logging configuration from environment variables
+func LoadLoggingConfig() (*LoggingConfig, error) {
+	if err := godotenv.Load(); err != nil {
+		logrus.Warn("No .env file found, using environment variables")
+	}
+
+	config := &LoggingConfig{
+		Level:      getEnv("LOG_LEVEL", "info"),
+		Format:     getEnv("LOG_FORMAT", "json"),
+		Output:     getEnv("LOG_OUTPUT", "stdout"),
+		Structured: getEnvAsBool("LOG_STRUCTURED", true),
+		File: FileLoggingConfig{
+			Enabled:    getEnvAsBool("LOG_FILE_ENABLED", false),
+			Filename:   getEnv("LOG_FILE_FILENAME", "/var/log/near-rt-ric.log"),
+			MaxSize:    getEnvAsInt("LOG_FILE_MAX_SIZE_MB", 100),
+			MaxBackups: getEnvAsInt("LOG_FILE_MAX_BACKUPS", 3),
+			MaxAge:     getEnvAsInt("LOG_FILE_MAX_AGE_DAYS", 7),
+			Compress:   getEnvAsBool("LOG_FILE_COMPRESS", false),
+		},
+		Remote: RemoteLoggingConfig{
+			Enabled:  getEnvAsBool("LOG_REMOTE_ENABLED", false),
+			Endpoint: getEnv("LOG_REMOTE_ENDPOINT", ""),
+			Protocol: getEnv("LOG_REMOTE_PROTOCOL", "udp"),
+		},
+	}
+
+	return config, nil
+}
+
+// LoadXAppConfig loads xApp configuration from environment variables
+func LoadXAppConfig() (*XAppConfig, error) {
+	if err := godotenv.Load(); err != nil {
+		logrus.Warn("No .env file found, using environment variables")
+	}
+
+	config := &XAppConfig{
+		Manager: XAppManagerConfig{
+			Host:             getEnv("XAPP_MANAGER_HOST", "127.0.0.1"),
+			Port:             getEnvAsInt("XAPP_MANAGER_PORT", 8088),
+			DeploymentEngine: getEnv("XAPP_MANAGER_DEPLOYMENT_ENGINE", "kubernetes"),
+		},
+		Database: DatabaseConfig{
+			URL:      getEnv("XAPP_DATABASE_URL", "postgres://user:password@localhost:5432/xappdb?sslmode=disable"),
+			PoolSize: getEnvAsInt("XAPP_DB_POOL_SIZE", 10),
+		},
+		Cache: CacheConfig{
+			Type: getEnv("XAPP_CACHE_TYPE", "redis"),
+			Redis: RedisConfig{
+				URL:         getEnv("XAPP_REDIS_URL", "redis://localhost:6379/0"),
+				MaxRetries:  getEnvAsInt("XAPP_REDIS_MAX_RETRIES", 3),
+				DialTimeout: getEnvAsInt("XAPP_REDIS_DIAL_TIMEOUT_SEC", 5),
+			},
+		},
+		Kubernetes: KubernetesConfig{
+			Namespace:      getEnv("XAPP_K8S_NAMESPACE", "xapp"),
+			InCluster:      getEnvAsBool("XAPP_K8S_IN_CLUSTER", false),
+			ConfigPath:     getEnv("XAPP_K8S_CONFIG_PATH", ""),
+			ServiceAccount: getEnv("XAPP_K8S_SERVICE_ACCOUNT", "xapp-manager"),
+		},
+		Registry: XAppRegistryConfig{
+			Type: getEnv("XAPP_REGISTRY_TYPE", "helm"),
+			Helm: HelmRegistryConfig{
+				URL:      getEnv("XAPP_HELM_REGISTRY_URL", "oci://registry-1.docker.io"),
+				Username: getEnv("XAPP_HELM_REGISTRY_USERNAME", ""),
+				Password: getEnv("XAPP_HELM_REGISTRY_PASSWORD", ""),
+			},
+		},
+		Health: HealthConfig{
+			CheckInterval:    getEnvAsInt("XAPP_HEALTH_CHECK_INTERVAL_SEC", 30),
+			FailureThreshold: getEnvAsInt("XAPP_HEALTH_FAILURE_THRESHOLD", 3),
+			TimeoutPerCheck:  getEnvAsInt("XAPP_HEALTH_TIMEOUT_PER_CHECK_SEC", 10),
+		},
+		LogLevel: getEnv("XAPP_LOG_LEVEL", "info"),
+	}
+
+	return config, nil
 }
 
 // LoadA1Config loads A1 configuration from environment variables or a .env file
@@ -190,16 +394,43 @@ func LoadO1Config() (*O1Config, error) {
 	}
 
 	config := &O1Config{
-		LogLevel: getEnv("O1_LOG_LEVEL", "info"),
+		Enabled:     getEnvAsBool("O1_ENABLED", true),
+		Port:        getEnvAsInt("O1_PORT", 830),
+		BindAddress: getEnv("O1_BIND_ADDRESS", "0.0.0.0"),
+		LogLevel:    getEnv("O1_LOG_LEVEL", "info"),
+		SSH: SSHConfig{
+			HostKeyPath:        getEnv("O1_SSH_HOST_KEY_PATH", "/etc/near-rt-ric/ssh/ssh_host_rsa_key"),
+			AuthorizedKeysPath: getEnv("O1_SSH_AUTHORIZED_KEYS_PATH", "/etc/near-rt-ric/ssh/authorized_keys"),
+			Timeout:            getEnvAsInt("O1_SSH_TIMEOUT_SEC", 30),
+			MaxConnections:     getEnvAsInt("O1_SSH_MAX_CONNECTIONS", 10),
+		},
 		NETCONF: NETCONFConfig{
-			ListenAddress: getEnv("O1_NETCONF_LISTEN_ADDRESS", "0.0.0.0"),
-			Port:          getEnvAsInt("O1_NETCONF_PORT", 830),
-			TLSPort:       getEnvAsInt("O1_NETCONF_TLS_PORT", 6513),
+			ListenAddress:  getEnv("O1_NETCONF_LISTEN_ADDRESS", "0.0.0.0"),
+			Port:           getEnvAsInt("O1_NETCONF_PORT", 830),
+			TLSPort:        getEnvAsInt("O1_NETCONF_TLS_PORT", 6513),
+			SessionTimeout: getEnvAsInt("O1_NETCONF_SESSION_TIMEOUT_SEC", 600),
+			MaxSessions:    getEnvAsInt("O1_NETCONF_MAX_SESSIONS", 10),
 			TLS: TLSConfig{
 				Enabled:  getEnvAsBool("O1_NETCONF_TLS_ENABLED", true),
 				CertFile: getEnv("O1_NETCONF_TLS_CERT_FILE", "/certs/tls.crt"),
 				KeyFile:  getEnv("O1_NETCONF_TLS_KEY_FILE", "/certs/tls.key"),
 			},
+		},
+		YANG: YANGConfig{
+			ModulesPath:    getEnv("O1_YANG_MODULES_PATH", "/etc/near-rt-ric/yang"),
+			ValidateConfig: getEnvAsBool("O1_YANG_VALIDATE_CONFIG", true),
+		},
+		FileManagement: FileManagementConfig{
+			Enabled:     getEnvAsBool("O1_FILE_MANAGEMENT_ENABLED", true),
+			UploadPath:  getEnv("O1_FILE_MANAGEMENT_UPLOAD_PATH", "/var/lib/near-rt-ric/uploads"),
+			MaxFileSize: getEnvAsInt("O1_FILE_MANAGEMENT_MAX_FILE_SIZE_MB", 100),
+		},
+		SoftwareManagement: SoftwareManagementConfig{
+			Enabled:      getEnvAsBool("O1_SOFTWARE_MANAGEMENT_ENABLED", true),
+			PackagePath:  getEnv("O1_SOFTWARE_MANAGEMENT_PACKAGE_PATH", "/var/lib/near-rt-ric/packages"),
+			InstallPath:  getEnv("O1_SOFTWARE_MANAGEMENT_INSTALL_PATH", "/opt/near-rt-ric"),
+			BackupPath:   getEnv("O1_SOFTWARE_MANAGEMENT_BACKUP_PATH", "/var/lib/near-rt-ric/backups"),
+			MaxPackages:  getEnvAsInt("O1_SOFTWARE_MANAGEMENT_MAX_PACKAGES", 10),
 		},
 	}
 

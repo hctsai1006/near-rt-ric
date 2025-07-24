@@ -13,12 +13,12 @@ import {
   Database,
   Cpu
 } from 'lucide-react'
-import StatsCard from '../components/StatsCard'
-import NetworkTopology from '../components/NetworkTopology'
-import RealTimeMetrics from '../components/RealTimeMetrics'
-import AlarmsSummary from '../components/AlarmsSummary'
+import StatsCard from '../components/StatsCard.tsx'
+import NetworkTopology from '../components/NetworkTopology.tsx'
+import RealTimeMetrics from '../components/RealTimeMetrics.tsx'
+import AlarmsSummary from '../components/AlarmsSummary.tsx'
 import { api } from '../services/api'
-import { useRealTimeMetrics } from '../hooks/useRealTimeMetrics'
+import { useRealTimeMetrics } from '../hooks/useRealTimeMetrics.ts'
 
 const containerVariants = {
   hidden: { opacity: 0 },

@@ -64,10 +64,10 @@ type CertificateInfo struct {
 }
 
 // NewMTLSManager creates a new mTLS manager with enhanced security
-func NewMTLSManager(config *MTLSConfig, logger *logrus.Logger) (*MTLSManager, error) {
+func NewMTLSManager(config *MTLSConfig, baseLogger *logrus.Logger) (*MTLSManager, error) {
 	manager := &MTLSManager{
 		config: config,
-		logger: logger.WithField("component", "mtls-manager"),
+		logger: baseLogger.WithField("component", "mtls-manager"),
 	}
 	
 	// Set secure defaults

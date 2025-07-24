@@ -1,26 +1,12 @@
 package o1
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"fmt"
-	"golang.org/x/crypto/ssh"
+	"strings"
+	"time"
 )
 
-// generateHostKey generates an RSA host key for SSH server
-func generateHostKey() (ssh.Signer, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate private key: %w", err)
-	}
 
-	signer, err := ssh.NewSignerFromKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer from key: %w", err)
-	}
-
-	return signer, nil
-}
 
 // YANG model utilities
 
@@ -112,8 +98,6 @@ func FormatAlarmSeverity(severity AlarmSeverity) string {
 		return "MINOR"
 	case AlarmWarning:
 		return "WARNING"
-	case AlarmCleared:
-		return "CLEARED"
 	default:
 		return "UNKNOWN"
 	}
@@ -130,8 +114,6 @@ func GetAlarmSeverityLevel(severity AlarmSeverity) int {
 		return 2
 	case AlarmWarning:
 		return 1
-	case AlarmCleared:
-		return 0
 	default:
 		return -1
 	}
@@ -315,7 +297,7 @@ func CreateO1Event(eventType, managedObject, source, severity, description strin
 
 // generateEventID generates a unique event ID
 func generateEventID() int64 {
-	return generateTimestamp().UnixNano()
+	return time.Now().UnixNano()
 }
 
 // generateTimestamp generates current timestamp
@@ -361,4 +343,3 @@ func ParseXMLPath(path string) []string {
 	}
 	return result
 }
-

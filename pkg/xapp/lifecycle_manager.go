@@ -14,7 +14,6 @@ import (
 
 // LifecycleManager manages the lifecycle of xApps
 type LifecycleManager struct {
-	config  *config.XAppConfig
 	logger  *logrus.Logger
 	metrics *monitoring.MetricsCollector
 
@@ -71,11 +70,10 @@ type DeploymentEngine interface {
 }
 
 // NewLifecycleManager creates a new xApp lifecycle manager
-func NewLifecycleManager(cfg *config.XAppConfig, logger *logrus.Logger, metrics *monitoring.MetricsCollector, deploymentEngine DeploymentEngine) *LifecycleManager {
+func NewLifecycleManager(logger *logrus.Logger, metrics *monitoring.MetricsCollector, deploymentEngine DeploymentEngine) *LifecycleManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	lm := &LifecycleManager{
-		config:              cfg,
 		logger:              logger.WithField("component", "xapp-lifecycle"),
 		metrics:             metrics,
 		xapps:               make(map[XAppID]*XApp),

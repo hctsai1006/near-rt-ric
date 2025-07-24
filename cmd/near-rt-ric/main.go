@@ -26,19 +26,19 @@ const (
 	AppDescription = "Production-grade O-RAN Near Real-Time RAN Intelligent Controller"
 )
 
-// RICServer represents the main Near-RT RIC server
+'''// RICServer represents the main Near-RT RIC server
 type RICServer struct {
 	config      *config.Config
 	logger      *logrus.Logger
-	
+
 	// O-RAN interfaces
 	e2Interface *e2.E2Interface
 	a1Interface *a1.A1Interface
-	o1Interface *o1.O1Interface
-	
+	rpcHandler *o1.RPCHandler
+
 	// xApp framework
 	xappManager *xapp.Manager
-	
+
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -46,7 +46,7 @@ type RICServer struct {
 // NewRICServer creates a new RIC server instance
 func NewRICServer(cfg *config.Config) (*RICServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Initialize structured logging
 	logger := logging.NewLogger(cfg.Logging)
 	logger.WithFields(logrus.Fields{
@@ -89,19 +89,18 @@ func (s *RICServer) initializeInterfaces() error {
 	}
 
 	// Initialize A1 interface
-	s.a1Interface, err = a1.NewA1Interface(s.config.A1, s.logger)
-	if err != nil {
-		return fmt.Errorf("failed to create A1 interface: %w", err)
-	}
+	repo := a1.NewMemoryRepository()
+	validator := a1.NewA1PolicyValidator()
+	s.a1Interface = a1.NewA1Interface(s.logger, repo, validator)
 
 	// Initialize O1 interface
-	s.o1Interface, err = o1.NewO1Interface(s.config.O1, s.logger)
+	s.rpcHandler, err = o1.NewRPCHandler(s.config.O1, s.logger)
 	if err != nil {
 		return fmt.Errorf("failed to create O1 interface: %w", err)
 	}
 
 	return nil
-}
+}'''
 
 // Start starts all RIC components
 func (s *RICServer) Start() error {
@@ -131,7 +130,7 @@ func (s *RICServer) Start() error {
 	// Start O1 interface
 	g.Go(func() error {
 		s.logger.Info("Starting O1 interface")
-		if err := s.o1Interface.Start(ctx); err != nil {
+		if err := s.rpcHandler.Start(); err != nil {
 			return fmt.Errorf("O1 interface failed: %w", err)
 		}
 		return nil
@@ -182,12 +181,10 @@ func (s *RICServer) Stop() error {
 		return nil
 	})
 
-	g.Go(func() error {
-		if err := s.o1Interface.Stop(ctx); err != nil {
-			s.logger.WithError(err).Error("Error stopping O1 interface")
-		}
+	'''	g.Go(func() error {
+		s.o1Interface.Stop()
 		return nil
-	})
+	})'''
 
 	g.Go(func() error {
 		if err := s.a1Interface.Stop(ctx); err != nil {

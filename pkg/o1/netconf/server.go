@@ -1,26 +1,35 @@
 package netconf
 
 import (
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net"
-	"time"
 
-	"github.com/hctsai1006/near-rt-ric/pkg/o1"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
-// Server represents a NETCONF server
+// RPCReply represents a NETCONF RPC reply
+type RPCReply struct {
+	XMLName   xml.Name `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 rpc-reply"`
+	MessageID string   `xml:"message-id,attr"`
+	Data      string   `xml:",innerxml"`
+}
+
+// RPCHandler is an interface for handling NETCONF RPCs
+type RPCHandler interface {
+	HandleRPC(rpc *RPCRequest) (*RPCReply, error)
+}
 type Server struct {
-	listener net.Listener
-	logger   *logrus.Logger
-	config   *ssh.ServerConfig
-	o1Server o1.O1Interface
+	listener   net.Listener
+	logger     *logrus.Logger
+	config     *ssh.ServerConfig
+	rpcHandler RPCHandler
 }
 
 // NewServer creates a new NETCONF server
-func NewServer(logger *logrus.Logger, o1Server o1.O1Interface) (*Server, error) {
+func NewServer(logger *logrus.Logger, rpcHandler RPCHandler) (*Server, error) {
 	config := &ssh.ServerConfig{
 		// In a real implementation, you would use a more secure way to handle keys
 		// and you would implement proper authentication.
@@ -50,7 +59,6 @@ e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
 e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
 e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
 e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
 e-mail:test@test.com
 -----END OPENSSH PRIVATE KEY-----`)
 	private, err := ssh.ParsePrivateKey(privateBytes)
@@ -60,9 +68,9 @@ e-mail:test@test.com
 	config.AddHostKey(private)
 
 	return &Server{
-		logger:   logger,
-		config:   config,
-		o1Server: o1Server,
+		logger:     logger,
+		config:     config,
+		rpcHandler: rpcHandler,
 	}, nil
 }
 
@@ -130,18 +138,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 func (s *Server) handleSession(channel ssh.Channel) {
 	defer channel.Close()
 
-	// Send hello message
-	hello := &HelloMessage{
-		Capabilities: []string{
-			"urn:ietf:params:netconf:base:1.1",
-		},
-		SessionID: int(time.Now().Unix()),
-	}
-	if err := sendHello(channel, hello); err != nil {
-		s.logger.WithError(err).Error("Failed to send hello message")
-		return
-	}
-
+	// In a real implementation, you would handle hello messages and capabilities.
+	// For now, we'll just read RPC requests and pass them to the handler.
 	decoder := xml.NewDecoder(channel)
 	for {
 		var rpc RPCRequest
@@ -153,7 +151,7 @@ func (s *Server) handleSession(channel ssh.Channel) {
 			break
 		}
 
-		reply, err := s.o1Server.HandleRPCRequest(&rpc)
+		reply, err := s.rpcHandler.HandleRPC(&rpc)
 		if err != nil {
 			s.logger.WithError(err).Error("Failed to handle RPC request")
 			// In a real implementation, you would send an RPC error reply
@@ -166,24 +164,10 @@ func (s *Server) handleSession(channel ssh.Channel) {
 	}
 }
 
-func sendRPCReply(w io.Writer, reply *RPCResponse) error {
+func sendRPCReply(w io.Writer, reply *RPCReply) error {
 	// In a real implementation, you would use xml.Marshal
 	// but for now, we'll just write the raw XML.
 	replyXML := fmt.Sprintf(`<rpc-reply message-id="%s" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">%s</rpc-reply>]]>]]>`, reply.MessageID, reply.Data)
 	_, err := w.Write([]byte(replyXML))
-	return err
-}
-
-func sendHello(w io.Writer, hello *HelloMessage) error {
-	// In a real implementation, you would use xml.Marshal
-	// but for now, we'll just write the raw XML.
-	helloXML := fmt.Sprintf(`<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-  <capabilities>
-    <capability>%s</capability>
-  </capabilities>
-  <session-id>%d</session-id>
-</hello>]]>]]>`, hello.Capabilities[0], hello.SessionID)
-
-	_, err := w.Write([]byte(helloXML))
 	return err
 }

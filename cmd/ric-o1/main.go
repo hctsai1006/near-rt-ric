@@ -8,8 +8,7 @@ import (
 	"syscall"
 
 	"github.com/hctsai1006/near-rt-ric/pkg/o1"
-	"github.com/hctsai1006/near-rt-ric/pkg/o1/netconf"
-	"github.com/hctsai1006/near-rt-ric/pkg/o1/yang"
+	"github.com/hctsai1006/near-rt-ric/pkg/o1/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -23,6 +22,7 @@ var (
 	listenPort = flag.Int("listen-port", 830, "Listen port for O1 interface")
 	logLevel   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	showVersion = flag.Bool("version", false, "Show version information")
+	yangDir    = flag.String("yang-dir", "yang", "Directory containing YANG models")
 )
 
 func main() {
@@ -47,26 +47,22 @@ func main() {
 		"listen_port": *listenPort,
 	}).Info("Starting O-RAN O1 Interface")
 
-	// Create YANG manager and load models
-	yangManager := yang.NewManager(logger)
-	if err := yangManager.LoadModels("yang"); err != nil {
-		logger.WithError(err).Fatal("Failed to load YANG models")
+	config := &o1.Config{
+		Netconf: &netconf.Config{
+			Host: *listenAddr,
+			Port: *listenPort,
+		},
+		YangDir: *yangDir,
 	}
 
-	// Create O1 server
-	o1Server := o1.NewO1Server(yangManager, logger)
-
-	// Create NETCONF server
-	netconfServer, err := netconf.NewServer(logger, o1Server)
+	server, err := o1.NewServer(config, logger)
 	if err != nil {
-		logger.WithError(err).Fatal("Failed to create NETCONF server")
+		logger.WithError(err).Fatal("Failed to create O1 server")
 	}
 
-	// Start NETCONF server in a goroutine
 	go func() {
-		addr := fmt.Sprintf("%s:%d", *listenAddr, *listenPort)
-		if err := netconfServer.Start(addr); err != nil {
-			logger.WithError(err).Fatal("Failed to start NETCONF server")
+		if err := server.Start(); err != nil {
+			logger.WithError(err).Fatal("Failed to start O1 server")
 		}
 	}()
 
@@ -78,6 +74,6 @@ func main() {
 	sig := <-sigChan
 	logger.WithField("signal", sig.String()).Info("Received shutdown signal")
 
-	netconfServer.Stop()
+	server.Stop()
 	logger.Info("O-RAN O1 Interface shutdown completed successfully")
 }

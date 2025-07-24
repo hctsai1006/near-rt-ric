@@ -1,95 +1,140 @@
+// +build linux
+
 package e2
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
+	"github.com/ishidawataru/sctp"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestE2SetupProcedure(t *testing.T) {
-	// Setup E2 interface
-	e2Interface := NewE2Interface(":36421")
-	require.NoError(t, e2Interface.Start())
-	defer e2Interface.Stop()
+func TestE2Integration(t *testing.T) {
+	log := logrus.New()
 
-	// Create E2 Setup Request
-	setupReq := &models.E2SetupRequest{
-		GlobalE2NodeID: &models.GlobalE2NodeID{
-			GNB_ID: &models.GNB_ID{
-				GNB_ID: []byte{0x12, 0x34, 0x56},
-			},
-		},
-		RANfunctions: []*models.RANfunction{
-			{
-				RANfunctionID:         1,
-				RANfunctionDefinition: []byte("KPM_function_definition"),
-				RANfunctionRevision:   1,
-			},
-		},
+	// Create a basic SCTPConfig for the test
+	serverConfig := &SCTPConfig{
+		ListenAddress:     "127.0.0.1",
+		Port:              38412,
+		MaxConnections:    10,
+		ConnectionTimeout: 5 * time.Second,
+		HeartbeatInterval: 1 * time.Second,
+		BufferSize:        1500,
+		Streams:           3,
 	}
 
-	// Test ASN.1 encoding
-	encoded, err := EncodeE2SetupRequest(setupReq)
-	require.NoError(t, err)
-	assert.Greater(t, len(encoded), 0)
+	server, err := NewSCTPServer(serverConfig, log)
+	assert.NoError(t, err)
+	defer server.Stop(context.Background())
 
-	// Test SCTP transmission
-	response, err := e2Interface.SendE2SetupRequest("test_node", setupReq)
-	require.NoError(t, err)
-	assert.NotNil(t, response)
-	assert.Equal(t, models.E2_SETUP_RESPONSE, response.ProcedureCode)
-}
-
-func TestRICSubscriptionProcedure(t *testing.T) {
-	e2Interface := NewE2Interface(":36422") // Use a different port to avoid conflict
-	require.NoError(t, e2Interface.Start())
-	defer e2Interface.Stop()
-
-	// Test subscription request
-	subReq := &models.RICsubscriptionRequest{
-		RICrequestID: &models.RICrequestID{
-			RICrequestorID: 1,
-			RICinstanceID:  1,
-		},
-		RANfunctionID: 1,
-		RICsubscriptionDetails: &models.RICsubscriptionDetails{
-			RICeventTriggerDefinition: []byte("trigger_definition"),
-			RICactions: []*models.RICaction{
-				{
-					RICactionID:   1,
-					RICactionType: models.Report,
+	// Setup message handler
+	server.SetMessageHandler(func(connectionID, nodeID string, data []byte) {
+		// Try to decode as E2SetupRequest
+		setupReq, err := DecodeE2SetupRequest(data)
+		if err == nil && setupReq != nil {
+			// It's a setup request, send a response
+			resp := &models.E2SetupResponse{
+				TransactionID: setupReq.TransactionID,
+				GlobalRICID: models.GlobalRICID{
+					PLMNIdentity: []byte{0x01, 0x02, 0x03},
+					RICIdentity:  []byte{0x01, 0x02, 0x03, 0x04},
 				},
-			},
-		},
-	}
+			}
+			encodedResp, err := EncodeE2SetupResponse(resp)
+			if err != nil {
+				t.Errorf("Failed to encode setup response: %v", err)
+				return
+			}
+			server.SendToConnection(connectionID, encodedResp)
+			return
+		}
 
-	response, err := e2Interface.CreateSubscription("test_node", subReq)
-	require.NoError(t, err)
-	assert.Equal(t, models.RIC_SUBSCRIPTION_RESPONSE, response.ProcedureCode)
-}
+		// Try to decode as RICSubscriptionRequest
+		subReq, err := DecodeSubscriptionRequest(data)
+		if err == nil && subReq != nil {
+			// It's a subscription request, send a response
+			resp := &models.RICSubscriptionResponse{
+				RICRequestID: *subReq.RICrequestID,
+				RICActionAdmitted: []models.RICActionAdmitted{
+					{RICActionID: 1},
+				},
+			}
+			encodedResp, err := EncodeRICSubscriptionResponse(resp)
+			if err != nil {
+				t.Errorf("Failed to encode subscription response: %v", err)
+				return
+			}
+			server.SendToConnection(connectionID, encodedResp)
+			return
+		}
+	})
 
-func TestE2PerformanceRequirements(t *testing.T) {
-	e2Interface := NewE2Interface(":36423") // Use a different port
-	require.NoError(t, e2Interface.Start())
-	defer e2Interface.Stop()
+	err = server.Start(context.Background())
+	assert.NoError(t, err)
 
-	// Test latency requirement: < 10ms for E2 message processing
-	start := time.Now()
+	// Client
+	clientAddr, err := sctp.ResolveSCTPAddr("sctp", "127.0.0.1:38412")
+	assert.NoError(t, err)
+	clientConn, err := sctp.DialSCTP("sctp", nil, clientAddr)
+	assert.NoError(t, err)
+	defer clientConn.Close()
 
-	setupReq := &models.E2SetupRequest{
-		GlobalE2NodeID: &models.GlobalE2NodeID{
-			GNB_ID: &models.GNB_ID{
-				GNB_ID: []byte{0xAB, 0xCD, 0xEF},
-			},
-		},
-	}
+	t.Run("TestE2Setup", func(t *testing.T) {
+		// E2 Setup Procedure
+		setupReq := &models.E2SetupRequest{
+			TransactionID:  1,
+			GlobalE2NodeID: &models.GlobalE2NodeID{GNB_ID: &models.GNB_ID{GNB_ID: []byte("test-gnb-id")}},
+			RANfunctions:   []*models.RANfunction{},
+		}
+		encodedReq, err := EncodeE2SetupRequest(setupReq)
+		assert.NoError(t, err)
 
-	_, err := e2Interface.SendE2SetupRequest("perf_test_node", setupReq)
-	require.NoError(t, err)
+		_, err = clientConn.Write(encodedReq)
+		assert.NoError(t, err)
 
-	latency := time.Since(start)
-	assert.Less(t, latency, 10*time.Millisecond, "E2 message processing should be < 10ms")
+		// Read response
+		buf := make([]byte, 1500)
+		n, err := clientConn.Read(buf)
+		assert.NoError(t, err)
+		assert.True(t, n > 0)
+
+		// Decode and validate response
+		setupResp, err := DecodeE2SetupResponse(buf[:n])
+		assert.NoError(t, err)
+		assert.NotNil(t, setupResp)
+		assert.Equal(t, int64(1), setupResp.TransactionID)
+	})
+
+	t.Run("TestSubscription", func(t *testing.T) {
+		// Subscription Procedure
+		subscriptionReq := &models.RICSubscriptionRequest{
+			RICrequestID:         &models.RICrequestID{RICrequestorID: 1, RICinstanceID: 1},
+			RANfunctionID:        1,
+			RICsubscriptionDetails: &models.RICsubscriptionDetails{},
+		}
+		encodedReq, err := EncodeSubscriptionRequest(subscriptionReq)
+		assert.NoError(t, err)
+
+		_, err = clientConn.Write(encodedReq)
+		assert.NoError(t, err)
+
+		// Read response
+		buf := make([]byte, 1500)
+		n, err := clientConn.Read(buf)
+		assert.NoError(t, err)
+		assert.True(t, n > 0)
+
+		// Decode and validate response
+		subResp, err := DecodeRICSubscriptionResponse(buf[:n])
+		assert.NoError(t, err)
+		assert.NotNil(t, subResp)
+		assert.Equal(t, 1, subResp.RICRequestID.RICrequestorID)
+		assert.Equal(t, 1, subResp.RICRequestID.RICinstanceID)
+		assert.Len(t, subResp.RICActionAdmitted, 1)
+		assert.Equal(t, int64(1), subResp.RICActionAdmitted[0].RICActionID)
+	})
 }

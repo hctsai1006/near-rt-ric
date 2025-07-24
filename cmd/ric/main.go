@@ -54,17 +54,9 @@ func main() {
 		"max_nodes": *maxNodes,
 	}).Info("Starting O-RAN Near-RT RIC")
 
-	// Create E2 interface configuration
-	config := &e2.E2InterfaceConfig{
-		ListenAddress:     *listenAddr,
-		ListenPort:        *listenPort,
-		MaxNodes:          *maxNodes,
-		HeartbeatInterval: 30 * time.Second,
-		ConnectionTimeout: 60 * time.Second,
-	}
-
 	// Create and start E2 interface
-	e2Interface := e2.NewE2Interface(config)
+	addr := fmt.Sprintf("%s:%d", *listenAddr, *listenPort)
+	e2Interface := e2.NewE2Interface(addr)
 	
 	if err := e2Interface.Start(); err != nil {
 		logger.WithError(err).Fatal("Failed to start E2 interface")
@@ -76,9 +68,6 @@ func main() {
 
 	logger.Info("O-RAN Near-RT RIC started successfully")
 
-	// Start status reporting goroutine
-	go statusReporter(e2Interface, logger)
-
 	// Wait for shutdown signal
 	sig := <-sigChan
 	logger.WithField("signal", sig.String()).Info("Received shutdown signal")
@@ -87,52 +76,17 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	shutdownChan := make(chan error, 1)
+	shutdownChan := make(chan struct{})
 	go func() {
-		shutdownChan <- e2Interface.Stop()
+		e2Interface.Stop()
+		close(shutdownChan)
 	}()
 
 	select {
-	case err := <-shutdownChan:
-		if err != nil {
-			logger.WithError(err).Error("Error during shutdown")
-			os.Exit(1)
-		}
+	case <-shutdownChan:
 		logger.Info("O-RAN Near-RT RIC shutdown completed successfully")
 	case <-shutdownCtx.Done():
 		logger.Error("Shutdown timeout exceeded")
 		os.Exit(1)
-	}
-}
-
-// statusReporter periodically reports the status of the RIC
-func statusReporter(e2Interface *e2.E2Interface, logger *logrus.Logger) {
-	ticker := time.NewTicker(5 * time.Minute) // Report every 5 minutes
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			status := e2Interface.GetStatus()
-			nodes := e2Interface.GetOperationalNodes()
-			
-			logger.WithFields(logrus.Fields{
-				"operational_nodes": len(nodes),
-				"total_connections": status["connection_statistics"].(map[string]interface{})["total_connections"],
-				"active_connections": status["connection_statistics"].(map[string]interface{})["active_connections"],
-			}).Info("O-RAN Near-RT RIC status report")
-
-			// Log details about each operational node
-			for _, node := range nodes {
-				logger.WithFields(logrus.Fields{
-					"node_id": node.ID,
-					"node_type": node.Type,
-					"address": node.Address,
-					"functions": len(node.FunctionList),
-					"setup_complete": node.SetupComplete,
-					"last_heartbeat": node.LastHeartbeat.Format(time.RFC3339),
-				}).Debug("Operational E2 node details")
-			}
-		}
 	}
 }

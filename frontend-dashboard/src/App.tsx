@@ -2,19 +2,19 @@ import React, { Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useNetworkFunctionDiscovery } from './hooks/useNetworkFunctionDiscovery'
-import { useWebSocketConnection } from './hooks/useWebSocketConnection'
-import Layout from './components/Layout'
-import LoadingSpinner from './components/LoadingSpinner'
+import { useWebSocketConnection } from './hooks/useWebSocketConnection.ts'
+import Layout from './components/Layout.tsx'
+import LoadingSpinner from './components/LoadingSpinner.tsx'
 
 // Lazy load pages for better performance
-const Dashboard = React.lazy(() => import('./pages/Dashboard'))
-const NetworkFunctions = React.lazy(() => import('./pages/NetworkFunctions'))
-const XApps = React.lazy(() => import('./pages/XApps'))
-const SMO = React.lazy(() => import('./pages/SMO'))
-const Monitoring = React.lazy(() => import('./pages/Monitoring'))
-const Alarms = React.lazy(() => import('./pages/Alarms'))
-const Configuration = React.lazy(() => import('./pages/Configuration'))
-const NotFound = React.lazy(() => import('./pages/NotFound'))
+const Dashboard = React.lazy(() => import('./pages/Dashboard.tsx'))
+const NetworkFunctions = React.lazy(() => import('./pages/NetworkFunctions.tsx'))
+const XApps = React.lazy(() => import('./pages/XApps.tsx'))
+const SMO = React.lazy(() => import('./pages/SMO.tsx'))
+const Monitoring = React.lazy(() => import('./pages/Monitoring.tsx'))
+const Alarms = React.lazy(() => import('./pages/Alarms.tsx'))
+const Configuration = React.lazy(() => import('./pages/Configuration.tsx'))
+const NotFound = React.lazy(() => import('./pages/NotFound.tsx'))
 
 // Page transition animations
 const pageVariants = {

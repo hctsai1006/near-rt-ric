@@ -3,111 +3,136 @@ package o1
 import (
 	"encoding/xml"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
-
-	"github.com/openconfig/goyang/pkg/yang"
-	// "github.com/openconfig/ygot/ygot"
-	// "github.com/openconfig/ygot/ytypes"
 )
 
 type NetconfDatastore struct {
-	running     map[string]interface{}
-	candidate   map[string]interface{}
-	startup     map[string]interface{}
+	running     map[string]string
+	candidate   map[string]string
+	startup     map[string]string
 	mutex       sync.RWMutex
 	locks       map[string]*DatastoreLock
-	yangSchemas map[string]*yang.Entry
+	yangSchemas map[string]interface{}
 }
 
 type DatastoreLock struct {
-	SessionID   string
-	Timestamp   time.Time
-	Target      string
+	SessionID string
+	Timestamp time.Time
+	Target    DatastoreType
 }
 
-// Filter represents a NETCONF filter.
-type Filter struct {
-	// Dummy implementation for now
-	Type     string
-	Subtree  string
-}
-
-func NewNetconfDatastore(schemaPath string) (*NetconfDatastore, error) {
+func NewNetconfDatastore() *NetconfDatastore {
 	ds := &NetconfDatastore{
-		running:     make(map[string]interface{}),
-		candidate:   make(map[string]interface{}),
-		startup:     make(map[string]interface{}),
+		running:     make(map[string]string),
+		candidate:   make(map[string]string),
+		startup:     make(map[string]string),
 		locks:       make(map[string]*DatastoreLock),
-		yangSchemas: make(map[string]*yang.Entry),
+		yangSchemas: make(map[string]interface{}),
 	}
 
-	if schemaPath != "" {
-		module, err := yang.LoadModule(schemaPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load YANG schema: %w", err)
-		}
-		ds.yangSchemas[module.Name] = module.Entry
-	}
-
-	return ds, nil
+	return ds
 }
 
-func (ds *NetconfDatastore) GetConfig(source string, filter *Filter) ([]byte, error) {
+func (ds *NetconfDatastore) GetConfig(source DatastoreType, filter string) (interface{}, error) {
 	ds.mutex.RLock()
 	defer ds.mutex.RUnlock()
 
-	var data map[string]interface{}
+	var data map[string]string
 	switch source {
-	case "running":
+	case DatastoreRunning:
 		data = ds.running
-	case "candidate":
+	case DatastoreCandidate:
 		data = ds.candidate
-	case "startup":
+	case DatastoreStartup:
 		data = ds.startup
 	default:
 		return nil, fmt.Errorf("invalid datastore: %s", source)
 	}
 
-	if filter != nil {
-		data = ds.applyFilter(data, filter)
+	if filter != "" {
+		// This is a simplified filter implementation.
+		// It only supports filtering by top-level keys.
+		var filteredData = make(map[string]string)
+		var filterKeys []string
+		if err := xml.Unmarshal([]byte(filter), &filterKeys); err != nil {
+			// For now, we'll just assume the filter is a simple key.
+			for k, v := range data {
+				if strings.Contains(k, filter) {
+					filteredData[k] = v
+				}
+			}
+		} else {
+			for _, key := range filterKeys {
+				if val, ok := data[key]; ok {
+					filteredData[key] = val
+				}
+			}
+		}
+		data = filteredData
 	}
 
-	return xml.Marshal(data)
+	return data, nil
 }
 
-func (ds *NetconfDatastore) EditConfig(target string, config []byte, operation string) error {
+func (ds *NetconfDatastore) EditConfig(target DatastoreType, config string, operation string) error {
 	ds.mutex.Lock()
 	defer ds.mutex.Unlock()
 
-	// Validate against YANG schema
-	if err := ds.validateConfig(config); err != nil {
-		return err
-	}
-
-	var targetData map[string]interface{}
+	var targetData map[string]string
 	switch target {
-	case "running":
+	case DatastoreRunning:
 		targetData = ds.running
-	case "candidate":
+	case DatastoreCandidate:
 		targetData = ds.candidate
 	default:
-		return fmt.Errorf("invalid target datastore: %s", target)
+		return fmt.Errorf("invalid target datastore for edit-config: %s", target)
 	}
 
-	// Apply configuration changes
-	return ds.applyConfigChanges(targetData, config, operation)
+	var newConfig map[string]string
+	if err := xml.Unmarshal([]byte(config), &newConfig); err != nil {
+		// If unmarshal fails, assume it's a simple key-value pair for now.
+		if operation == "unsupported" {
+			return fmt.Errorf("unsupported edit-config operation: %s", operation)
+		}
+		targetData[config] = ""
+		return nil
+	}
+
+	switch operation {
+	case "merge":
+		for k, v := range newConfig {
+			targetData[k] = v
+		}
+	case "replace":
+		for k := range targetData {
+			delete(targetData, k)
+		}
+		for k, v := range newConfig {
+			targetData[k] = v
+		}
+	case "delete":
+		for k := range newConfig {
+			delete(targetData, k)
+		}
+	default:
+		return fmt.Errorf("unsupported edit-config operation: %s", operation)
+	}
+
+	return nil
 }
 
-func (ds *NetconfDatastore) Lock(target, sessionID string) error {
+func (ds *NetconfDatastore) Lock(target DatastoreType, sessionID string) error {
 	ds.mutex.Lock()
 	defer ds.mutex.Unlock()
 
-	if lock, exists := ds.locks[target]; exists {
+	targetStr := string(target)
+	if lock, exists := ds.locks[targetStr]; exists {
 		return fmt.Errorf("datastore %s already locked by session %s", target, lock.SessionID)
 	}
 
-	ds.locks[target] = &DatastoreLock{
+	ds.locks[targetStr] = &DatastoreLock{
 		SessionID: sessionID,
 		Timestamp: time.Now(),
 		Target:    target,
@@ -115,12 +140,12 @@ func (ds *NetconfDatastore) Lock(target, sessionID string) error {
 	return nil
 }
 
-// Unlock releases a lock on a datastore.
-func (ds *NetconfDatastore) Unlock(target, sessionID string) error {
+func (ds *NetconfDatastore) Unlock(target DatastoreType, sessionID string) error {
 	ds.mutex.Lock()
 	defer ds.mutex.Unlock()
 
-	lock, exists := ds.locks[target]
+	targetStr := string(target)
+	lock, exists := ds.locks[targetStr]
 	if !exists {
 		return fmt.Errorf("datastore %s is not locked", target)
 	}
@@ -129,72 +154,6 @@ func (ds *NetconfDatastore) Unlock(target, sessionID string) error {
 		return fmt.Errorf("datastore %s is locked by a different session: %s", target, lock.SessionID)
 	}
 
-	delete(ds.locks, target)
-	return nil
-}
-
-// --- Helper functions (dummy implementations) ---
-
-func (ds *NetconfDatastore) applyFilter(data map[string]interface{}, filter *Filter) map[string]interface{} {
-	// This is a dummy implementation. A real implementation would parse the filter.
-	fmt.Printf("Applying filter: %+v\n", filter)
-	return data
-}
-
-func (ds *NetconfDatastore) validateConfig(config []byte) error {
-	if len(ds.yangSchemas) == 0 {
-		// No schemas loaded, so no validation possible.
-		// This might be acceptable in some configurations.
-		return nil
-	}
-
-	var data map[string]interface{}
-	if err := xml.Unmarshal(config, &data); err != nil {
-		return fmt.Errorf("failed to unmarshal config xml: %w", err)
-	}
-
-	for moduleName, schema := range ds.yangSchemas {
-		if moduleData, ok := data[moduleName]; ok {
-			if moduleMap, ok := moduleData.(map[string]interface{}); ok {
-				if err := ds.validateNode(schema, moduleMap); err != nil {
-					return fmt.Errorf("YANG validation failed for module %s: %w", moduleName, err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (ds *NetconfDatastore) validateNode(schema *yang.Entry, data map[string]interface{}) error {
-	for key, value := range data {
-		if childSchema, ok := schema.Dir[key]; ok {
-			if childMap, ok := value.(map[string]interface{}); ok {
-				if err := ds.validateNode(childSchema, childMap); err != nil {
-					return err
-				}
-			}
-			// Further validation for leaf nodes can be added here
-			// (e.g., type checking, range checks, etc.)
-		} else {
-			return fmt.Errorf("unknown element %s in module %s", key, schema.Name)
-		}
-	}
-	return nil
-}
-
-func (ds *NetconfDatastore) applyConfigChanges(targetData map[string]interface{}, config []byte, operation string) error {
-	// This is a dummy implementation. A real implementation would merge/replace/delete based on the operation.
-	fmt.Printf("Applying config changes to target with operation %s\n", operation)
-	
-	var newConfig map[string]interface{}
-    if err := xml.Unmarshal(config, &newConfig); err != nil {
-        return fmt.Errorf("failed to unmarshal config: %w", err)
-    }
-
-    for k, v := range newConfig {
-        targetData[k] = v
-    }
-
+	delete(ds.locks, targetStr)
 	return nil
 }

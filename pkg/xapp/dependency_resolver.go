@@ -11,7 +11,7 @@ import (
 // DependencyResolver resolves xApp dependencies
 type DependencyResolver struct {
 	lifecycleManager *LifecycleManager
-	logger           *logrus.Logger
+	logger           *logrus.Entry
 	
 	// Dependency graph
 	dependencyGraph map[XAppID][]XAppID
@@ -45,10 +45,10 @@ type DependencyResolutionResult struct {
 }
 
 // NewDependencyResolver creates a new dependency resolver
-func NewDependencyResolver(lm *LifecycleManager, logger *logrus.Logger) *DependencyResolver {
+func NewDependencyResolver(lm *LifecycleManager, baseLogger *logrus.Logger) *DependencyResolver {
 	return &DependencyResolver{
 		lifecycleManager: lm,
-		logger:           logger.WithField("component", "dependency-resolver"),
+		logger:           baseLogger.WithField("component", "dependency-resolver"),
 		dependencyGraph:  make(map[XAppID][]XAppID),
 		serviceRegistry:  make(map[string]*ServiceEndpoint),
 	}

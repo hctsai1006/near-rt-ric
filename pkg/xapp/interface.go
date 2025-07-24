@@ -14,9 +14,9 @@ import (
 // XAppInterface represents the main xApp framework interface
 // Complies with O-RAN.WG2.xApp-v03.00 specification
 type XAppInterface struct {
-	config  *config.XAppConfig
-	logger  *logrus.Logger
+	logger  *logrus.Entry
 	metrics *monitoring.MetricsCollector
+	config  *config.XAppConfig
 
 	// Core components
 	lifecycleManager   *LifecycleManager
@@ -52,13 +52,13 @@ type XAppInterfaceEventHandler interface {
 }
 
 // NewXAppInterface creates a new xApp framework interface
-func NewXAppInterface(cfg *config.XAppConfig, logger *logrus.Logger, metrics *monitoring.MetricsCollector) (*XAppInterface, error) {
+func NewXAppInterface(cfg *config.XAppConfig, baseLogger *logrus.Logger, metrics *monitoring.MetricsCollector) (*XAppInterface, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	xappIntf := &XAppInterface{
-		config:    cfg,
-		logger:    logger.WithField("component", "xapp-interface"),
+		logger:    baseLogger.WithField("component", "xapp-interface"),
 		metrics:   metrics,
+		config:    cfg,
 		ctx:       ctx,
 		cancel:    cancel,
 		startTime: time.Now(),
@@ -66,28 +66,28 @@ func NewXAppInterface(cfg *config.XAppConfig, logger *logrus.Logger, metrics *mo
 
 	// Initialize deployment engine based on configuration
 	var deploymentEngine DeploymentEngine
-	switch cfg.DeploymentEngine {
+	switch cfg.Manager.DeploymentEngine {
 	case "kubernetes":
-		deploymentEngine = NewKubernetesDeploymentEngine(logger, cfg.Kubernetes.Namespace)
+		deploymentEngine = NewKubernetesDeploymentEngine(baseLogger, cfg.Kubernetes.Namespace)
 	case "docker":
-		deploymentEngine = NewDockerDeploymentEngine(logger)
+		deploymentEngine = NewDockerDeploymentEngine(baseLogger)
 	case "mock":
-		deploymentEngine = NewMockDeploymentEngine(logger)
+		deploymentEngine = NewMockDeploymentEngine(baseLogger)
 	default:
 		cancel()
-		return nil, fmt.Errorf("unsupported deployment engine: %s", cfg.DeploymentEngine)
+		return nil, fmt.Errorf("unsupported deployment engine: %s", cfg.Manager.DeploymentEngine)
 	}
 
 	xappIntf.deploymentEngine = deploymentEngine
 
 	// Initialize lifecycle manager
-	xappIntf.lifecycleManager = NewLifecycleManager(cfg, logger, metrics, deploymentEngine)
+	xappIntf.lifecycleManager = NewLifecycleManager(baseLogger, metrics, deploymentEngine)
 
 	// Initialize health monitor
-	xappIntf.healthMonitor = NewHealthMonitor(xappIntf.lifecycleManager, logger, metrics)
+	xappIntf.healthMonitor = NewHealthMonitor(xappIntf.lifecycleManager, baseLogger, metrics)
 
 	// Initialize dependency resolver
-	xappIntf.dependencyResolver = NewDependencyResolver(xappIntf.lifecycleManager, logger)
+	xappIntf.dependencyResolver = NewDependencyResolver(xappIntf.lifecycleManager, baseLogger)
 
 	// Set up event handlers for integrated components
 	xappIntf.setupEventHandlers()
@@ -105,10 +105,7 @@ func (xi *XAppInterface) Start(ctx context.Context) error {
 		return fmt.Errorf("xApp framework interface is already running")
 	}
 
-	xi.logger.WithFields(logrus.Fields{
-		"deployment_engine": xi.config.DeploymentEngine,
-		"max_instances":     xi.config.MaxInstances,
-	}).Info("Starting O-RAN xApp framework interface")
+	xi.logger.Info("Starting O-RAN xApp framework interface")
 
 	// Start lifecycle manager
 	if err := xi.lifecycleManager.Start(ctx); err != nil {
@@ -459,7 +456,7 @@ func (xi *XAppInterface) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"running":            xi.IsRunning(),
 		"uptime":             time.Since(xi.startTime),
-		"deployment_engine":  xi.config.DeploymentEngine,
+		"deployment_engine":  xi.config.Manager.DeploymentEngine,
 		"lifecycle_stats":    lifecycleStats,
 		"health_stats":       healthStats,
 		"dependency_stats":   dependencyStats,
@@ -488,31 +485,3 @@ func (xi *XAppInterface) HealthCheck() error {
 	return nil
 }
 
-// GetConfiguration returns the current configuration
-func (xi *XAppInterface) GetConfiguration() *config.XAppConfig {
-	return xi.config
-}
-
-// UpdateConfiguration updates the framework configuration (runtime updates)
-func (xi *XAppInterface) UpdateConfiguration(cfg *config.XAppConfig) error {
-	xi.logger.Info("Updating xApp framework configuration")
-
-	// Update health monitor configuration if changed
-	if cfg.HealthCheck.Interval != xi.config.HealthCheck.Interval {
-		xi.healthMonitor.SetCheckInterval(time.Duration(cfg.HealthCheck.Interval) * time.Second)
-	}
-	
-	if cfg.HealthCheck.Timeout != xi.config.HealthCheck.Timeout {
-		xi.healthMonitor.SetCheckTimeout(time.Duration(cfg.HealthCheck.Timeout) * time.Second)
-	}
-	
-	if cfg.HealthCheck.FailureThreshold != xi.config.HealthCheck.FailureThreshold {
-		xi.healthMonitor.SetFailureThreshold(cfg.HealthCheck.FailureThreshold)
-	}
-
-	// Update configuration
-	xi.config = cfg
-
-	xi.logger.Info("xApp framework configuration updated successfully")
-	return nil
-}

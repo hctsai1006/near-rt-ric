@@ -5,14 +5,7 @@ import (
 	"time"
 )
 
-// O1Interface defines the operations for the O1 interface
-type O1Interface interface {
-	StartNetconfServer() error
-	HandleRPCRequest(*netconf.RPCRequest) (*netconf.RPCResponse, error)
-	SendNotification(*Notification) error
-	ManageConfiguration(*ConfigOperation) error
-	CollectPerformanceData() error
-}
+
 
 // Notification represents an O1 notification
 type Notification struct {
@@ -157,7 +150,6 @@ const (
 	AlarmMajor    AlarmSeverity = "major"
 	AlarmMinor    AlarmSeverity = "minor"
 	AlarmWarning  AlarmSeverity = "warning"
-	AlarmCleared  AlarmSeverity = "cleared"
 )
 
 // AlarmStatus represents alarm status

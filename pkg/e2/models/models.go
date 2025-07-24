@@ -1,17 +1,26 @@
 package models
 
 import (
-	"encoding/asn1"
+	"reflect"
 	"sync/atomic"
 	"time"
 )
 
 // ProcedureCode defines the procedure code for E2 messages.
-type ProcedureCode string
+type ProcedureCode int64
 
 const (
-	E2_SETUP_RESPONSE         ProcedureCode = "E2SetupResponse"
-	RIC_SUBSCRIPTION_RESPONSE ProcedureCode = "RICSubscriptionResponse"
+	ProcedureCodeE2Setup         ProcedureCode = 1
+	ProcedureCodeRICSubscription ProcedureCode = 12
+	ProcedureCodeRICControl      ProcedureCode = 13
+)
+
+type Criticality int64
+
+const (
+	CriticalityReject Criticality = 0
+	CriticalityIgnore Criticality = 1
+	CriticalityNotify Criticality = 2
 )
 
 // RICactionType defines the type of action for a RIC subscription.
@@ -261,21 +270,45 @@ func (m E2MessageType) String() string {
 }
 
 type E2AP_PDU struct {
-	InitiatingMessage   *InitiatingMessage
-	SuccessfulOutcome   *SuccessfulOutcome
-	UnsuccessfulOutcome *UnsuccessfulOutcome
+	InitiatingMessage *InitiatingMessage `asn1:"choice:initiatingMessage,optional"`
+	SuccessfulOutcome *SuccessfulOutcome `asn1:"choice:successfulOutcome,optional"`
+	UnsuccessfulOutcome *UnsuccessfulOutcome `asn1:"choice:unsuccessfulOutcome,optional"`
 }
 
 type InitiatingMessage struct {
-	Value asn1.RawValue
+	ProcedureCode ProcedureCode `asn1:"value"`
+	Criticality   Criticality   `asn1:"value"`
+	Value         interface{}   `asn1:"choice:InitiatingMessage"`
 }
 
 type SuccessfulOutcome struct {
-	Value asn1.RawValue
+	ProcedureCode ProcedureCode `asn1:"value"`
+	Criticality   Criticality   `asn1:"value"`
+	Value         interface{}   `asn1:"choice:SuccessfulOutcome"`
 }
 
 type UnsuccessfulOutcome struct {
-	Value asn1.RawValue
+	ProcedureCode ProcedureCode `asn1:"value"`
+	Criticality   Criticality   `asn1:"value"`
+	Value         interface{}   `asn1:"choice:UnsuccessfulOutcome"`
+}
+
+
+
+var E2AP_PDU_TypeMaps = map[string]map[int64]reflect.Type{
+	"InitiatingMessage": {
+		int64(ProcedureCodeE2Setup):         reflect.TypeOf(E2SetupRequest{}),
+		int64(ProcedureCodeRICSubscription): reflect.TypeOf(RICSubscriptionRequest{}),
+		int64(ProcedureCodeRICControl):      reflect.TypeOf(RICcontrolRequest{}),
+	},
+	"SuccessfulOutcome": {
+		int64(ProcedureCodeE2Setup):         reflect.TypeOf(E2SetupResponse{}),
+		int64(ProcedureCodeRICSubscription): reflect.TypeOf(RICSubscriptionResponse{}),
+	},
+	"UnsuccessfulOutcome": {
+		int64(ProcedureCodeE2Setup):         reflect.TypeOf(E2SetupFailure{}),
+		int64(ProcedureCodeRICSubscription): reflect.TypeOf(RICSubscriptionFailure{}),
+	},
 }
 
 // RICSubscriptionFailure represents a RIC subscription failure.

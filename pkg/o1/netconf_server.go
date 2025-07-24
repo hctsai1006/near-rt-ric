@@ -2,6 +2,8 @@ package o1
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
@@ -19,7 +21,7 @@ import (
 // NetconfServer implements NETCONF protocol server
 type NetconfServer struct {
 	config  *config.O1Config
-	logger  *logrus.Logger
+	logger  *logrus.Entry
 	metrics *monitoring.MetricsCollector
 
 	// Server state
@@ -82,7 +84,7 @@ type NetconfSessionHandler struct {
 	server    *NetconfServer
 	session   *NetconfSession
 	conn      net.Conn
-	logger    *logrus.Logger
+	logger    *logrus.Entry
 	ctx       context.Context
 	cancel    context.CancelFunc
 	decoder   *xml.Decoder
@@ -92,12 +94,12 @@ type NetconfSessionHandler struct {
 }
 
 // NewNetconfServer creates a new NETCONF server
-func NewNetconfServer(cfg *config.O1Config, logger *logrus.Logger, metrics *monitoring.MetricsCollector) (*NetconfServer, error) {
+func NewNetconfServer(cfg *config.O1Config, baseLogger *logrus.Logger, metrics *monitoring.MetricsCollector) (*NetconfServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	server := &NetconfServer{
 		config:        cfg,
-		logger:        logger.WithField("component", "netconf-server"),
+		logger:        baseLogger.WithField("component", "netconf-server"),
 		metrics:       metrics,
 		sessions:      make(map[uint32]*NetconfSession),
 		nextSessionID: 1,
@@ -116,6 +118,10 @@ func NewNetconfServer(cfg *config.O1Config, logger *logrus.Logger, metrics *moni
 		cancel()
 		return nil, fmt.Errorf("failed to setup SSH config: %w", err)
 	}
+
+	// Initialize datastore and message handler
+	datastore := NewNetconfDatastore()
+	server.messageHandler = NewMessageHandler(datastore)
 	
 	server.logger.Info("NETCONF server initialized")
 	return server, nil
@@ -574,4 +580,12 @@ func (ns *NetconfServer) performCleanup() {
 		"total_sessions":  ns.stats.TotalSessions,
 		"total_messages":  ns.stats.TotalMessages,
 	}).Debug("NETCONF server statistics")
+}
+
+func generateHostKey() (ssh.Signer, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewSignerFromKey(key)
 }

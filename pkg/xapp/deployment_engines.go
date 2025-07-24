@@ -12,7 +12,7 @@ import (
 
 // KubernetesDeploymentEngine implements deployment engine for Kubernetes
 type KubernetesDeploymentEngine struct {
-	logger    *logrus.Logger
+	logger    *logrus.Entry
 	namespace string
 	
 	// Kubernetes client would be here in production
@@ -20,9 +20,9 @@ type KubernetesDeploymentEngine struct {
 }
 
 // NewKubernetesDeploymentEngine creates a new Kubernetes deployment engine
-func NewKubernetesDeploymentEngine(logger *logrus.Logger, namespace string) *KubernetesDeploymentEngine {
+func NewKubernetesDeploymentEngine(baseLogger *logrus.Logger, namespace string) *KubernetesDeploymentEngine {
 	return &KubernetesDeploymentEngine{
-		logger:    logger.WithField("component", "k8s-deployment-engine"),
+		logger:    baseLogger.WithField("component", "k8s-deployment-engine"),
 		namespace: namespace,
 	}
 }
@@ -207,16 +207,16 @@ func (kde *KubernetesDeploymentEngine) PerformHealthCheck(ctx context.Context, i
 
 // DockerDeploymentEngine implements deployment engine for Docker
 type DockerDeploymentEngine struct {
-	logger *logrus.Logger
+	logger *logrus.Entry
 	
 	// Docker client would be here in production
 	// dockerClient *docker.Client
 }
 
 // NewDockerDeploymentEngine creates a new Docker deployment engine
-func NewDockerDeploymentEngine(logger *logrus.Logger) *DockerDeploymentEngine {
+func NewDockerDeploymentEngine(baseLogger *logrus.Logger) *DockerDeploymentEngine {
 	return &DockerDeploymentEngine{
-		logger: logger.WithField("component", "docker-deployment-engine"),
+		logger: baseLogger.WithField("component", "docker-deployment-engine"),
 	}
 }
 
@@ -391,7 +391,7 @@ func (dde *DockerDeploymentEngine) PerformHealthCheck(ctx context.Context, insta
 
 // MockDeploymentEngine implements a mock deployment engine for testing
 type MockDeploymentEngine struct {
-	logger *logrus.Logger
+	logger *logrus.Entry
 	
 	// Mock state
 	deployedInstances map[XAppInstanceID]*XAppInstance

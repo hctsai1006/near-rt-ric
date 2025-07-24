@@ -13,7 +13,7 @@ import (
 // HealthMonitor monitors the health of xApp instances
 type HealthMonitor struct {
 	lifecycleManager *LifecycleManager
-	logger           *logrus.Logger
+	logger           *logrus.Entry
 	metrics          *monitoring.MetricsCollector
 
 	// Health check configuration
@@ -43,12 +43,14 @@ type HealthEventHandler interface {
 }
 
 // NewHealthMonitor creates a new health monitor
-func NewHealthMonitor(lm *LifecycleManager, logger *logrus.Logger, metrics *monitoring.MetricsCollector) *HealthMonitor {
+func NewHealthMonitor(lm *LifecycleManager, baseLogger *logrus.Logger, metrics *monitoring.MetricsCollector) *HealthMonitor {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	metrics.RegisterXAppMetrics()
 
 	return &HealthMonitor{
 		lifecycleManager: lm,
-		logger:           logger.WithField("component", "xapp-health-monitor"),
+		logger:           baseLogger.WithField("component", "xapp-health-monitor"),
 		metrics:          metrics,
 		checkInterval:    30 * time.Second,
 		checkTimeout:     10 * time.Second,
