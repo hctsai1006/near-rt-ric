@@ -3,9 +3,14 @@ package a1_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -34,6 +39,8 @@ type A1IntegrationTestSuite struct {
 	baseURL           string
 	httpClient        *http.Client
 	authToken         string
+	privateKeyFile    *os.File
+	publicKeyFile     *os.File
 }
 
 // SetupSuite runs before all tests
@@ -43,6 +50,7 @@ func (suite *A1IntegrationTestSuite) SetupSuite() {
 	// Setup test containers
 	suite.setupPostgres()
 	suite.setupRedis()
+	suite.setupKeys()
 	suite.setupA1Interface()
 
 	// Setup HTTP client
@@ -63,6 +71,8 @@ func (suite *A1IntegrationTestSuite) TearDownSuite() {
 	if suite.redisContainer != nil {
 		suite.redisContainer.Terminate(suite.ctx)
 	}
+	os.Remove(suite.privateKeyFile.Name())
+	os.Remove(suite.publicKeyFile.Name())
 	suite.cancel()
 }
 
@@ -119,26 +129,51 @@ func (suite *A1IntegrationTestSuite) setupRedis() {
 	suite.redisURL = fmt.Sprintf("redis://%s:%s/0", host, port.Port())
 }
 
+func (suite *A1IntegrationTestSuite) setupKeys() {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(suite.T(), err)
+
+	suite.privateKeyFile, err = os.CreateTemp("", "private.pem")
+	require.NoError(suite.T(), err)
+
+	privateKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}
+	err = pem.Encode(suite.privateKeyFile, privateKeyPEM)
+	require.NoError(suite.T(), err)
+
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	require.NoError(suite.T(), err)
+
+	suite.publicKeyFile, err = os.CreateTemp("", "public.pem")
+	require.NoError(suite.T(), err)
+
+	publicKeyPEM := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+	err = pem.Encode(suite.publicKeyFile, publicKeyPEM)
+	require.NoError(suite.T(), err)
+}
+
 func (suite *A1IntegrationTestSuite) setupA1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 
-	metrics := monitoring.NewMetricsCollector("near_rt_ric", "a1")
+	metrics := monitoring.NewMetricsCollector()
 
 	cfg := &config.A1Config{
 		ListenAddress: "127.0.0.1",
 		ListenPort:    8080,
 		TLSEnabled:    false, // Disable TLS for testing
-		TLSCertPath:   "",
-		TLSKeyPath:    "",
 		Auth: config.AuthConfig{
-			Enabled:            false, // Disable auth for testing
-			PrivateKeyPath:     "",
-			PublicKeyPath:      "",
-			TokenExpiry:        3600,
-			Issuer:             "test-issuer",
-			Audience:           "test-audience",
-			StrictIPValidation: false,
+			Enabled:        true,
+			PrivateKeyPath: suite.privateKeyFile.Name(),
+			PublicKeyPath:  suite.publicKeyFile.Name(),
+			TokenExpiry:    3600,
+			Issuer:         "test-issuer",
+			Audience:       "test-audience",
 		},
 		Database: config.DatabaseConfig{
 			URL:      suite.dbURL,

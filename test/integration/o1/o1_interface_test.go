@@ -5,8 +5,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -28,15 +32,17 @@ import (
 
 // O1IntegrationTestSuite contains O1 interface integration tests
 type O1IntegrationTestSuite struct {
+	suite.Suite
 	ctx               context.Context
 	cancel            context.CancelFunc
-	o1Interface       *o1.O1Interface
+	o1Interface       *o1.Server
 	postgresContainer testcontainers.Container
 	dbURL             string
 	netconfClient     *NetconfSSHClient
 	testServerHost    string
 	testServerPort    int
-	suite.Suite
+	certFile          *os.File
+	keyFile           *os.File
 }
 
 // NetconfSSHClient represents a simple NETCONF SSH client for testing
@@ -55,6 +61,7 @@ func (suite *O1IntegrationTestSuite) SetupSuite() {
 
 	// Setup test containers
 	suite.setupPostgres()
+	suite.setupCerts()
 	suite.setupO1Interface()
 
 	// Wait for interface to be ready
@@ -70,11 +77,13 @@ func (suite *O1IntegrationTestSuite) TearDownSuite() {
 		suite.netconfClient.Close()
 	}
 	if suite.o1Interface != nil {
-		suite.o1Interface.Stop(suite.ctx)
+		suite.o1Interface.Stop()
 	}
 	if suite.postgresContainer != nil {
 		suite.postgresContainer.Terminate(suite.ctx)
 	}
+	os.Remove(suite.certFile.Name())
+	os.Remove(suite.keyFile.Name())
 	suite.cancel()
 }
 
@@ -107,87 +116,67 @@ func (suite *O1IntegrationTestSuite) setupPostgres() {
 	suite.dbURL = fmt.Sprintf("postgres://test_user:test_password@%s:%s/near_rt_ric_test?sslmode=disable", host, port.Port())
 }
 
+func (suite *O1IntegrationTestSuite) setupCerts() {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(suite.T(), err)
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"Test Co"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour * 24 * 180),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	require.NoError(suite.T(), err)
+
+	suite.certFile, err = os.CreateTemp("", "cert.pem")
+	require.NoError(suite.T(), err)
+	pem.Encode(suite.certFile, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	suite.keyFile, err = os.CreateTemp("", "key.pem")
+	require.NoError(suite.T(), err)
+	pem.Encode(suite.keyFile, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+}
+
 func (suite *O1IntegrationTestSuite) setupO1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 
-	metrics := monitoring.NewMetricsCollector("near_rt_ric", "o1")
-
 	// Generate test SSH keys
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	_, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(suite.T(), err)
 
 	suite.testServerHost = "127.0.0.1"
 	suite.testServerPort = 2830 // Non-standard port for testing
 
 	cfg := &config.O1Config{
-		NETCONF: config.NetconfConfig{
-			Server: config.NetconfServerConfig{
-				Host: suite.testServerHost,
-				Port: suite.testServerPort,
-				SSH: config.SSHConfig{
-					Enabled:           true,
-					HostKeyFile:       "", // Will be generated
-					AuthorizedKeysDir: "/tmp/test-keys",
-				},
-				TLS: config.TLSConfig{
-					Enabled:  false, // Disable TLS for testing
-					CertFile: "",
-					KeyFile:  "",
-				},
+		NETCONF: config.NETCONFConfig{
+			ListenAddress: suite.testServerHost,
+			Port:          suite.testServerPort,
+			TLS: config.TLSConfig{
+				Enabled:  true,
+				CertFile: suite.certFile.Name(),
+				KeyFile:  suite.keyFile.Name(),
 			},
-			Capabilities: []string{
-				"urn:ietf:params:netconf:base:1.0",
-				"urn:ietf:params:netconf:base:1.1",
-				"urn:o-ran:smo:teiv:1.0",
-			},
-		},
-		Database: config.DatabaseConfig{
-			URL:                suite.dbURL,
-			MaxConnections:     10,
-			MaxIdleConnections: 5,
-			ConnTimeout:        30 * time.Second,
 		},
 		YANG: config.YANGConfig{
 			ModulesPath: "test/fixtures/yang-modules",
-			Models: []config.YANGModel{
-				{
-					Name:      "ietf-interfaces",
-					Namespace: "urn:ietf:params:xml:ns:yang:ietf-interfaces",
-					Version:   "2018-02-20",
-				},
-				{
-					Name:      "o-ran-smo-teiv",
-					Namespace: "urn:o-ran:smo:teiv:1.0",
-					Version:   "1.0.0",
-				},
-			},
-		},
-		FCAPS: config.FCAPSConfig{
-			FaultManagement: config.FaultManagementConfig{
-				Enabled:           true,
-				AlarmBufferSize:   1000,
-				HeartbeatInterval: 30 * time.Second,
-			},
-			ConfigurationManagement: config.ConfigurationManagementConfig{
-				Enabled:        true,
-				BackupInterval: 24 * time.Hour,
-				MaxBackups:     7,
-			},
-			PerformanceManagement: config.PerformanceManagementConfig{
-				Enabled:            true,
-				CollectionInterval: 15 * time.Minute,
-				MetricsRetention:   30 * 24 * time.Hour,
-			},
 		},
 	}
 
-	suite.o1Interface, err = o1.NewO1Interface(cfg, logger, metrics)
+	suite.o1Interface, err = o1.NewServer(cfg, logger)
 	require.NoError(suite.T(), err)
 
 	// Start O1 interface in a goroutine so it doesn't block
 	go func() {
-		if err := suite.o1Interface.Start(suite.ctx); err != nil {
+		if err := suite.o1Interface.Start(); err != nil {
 			suite.T().Logf("O1 interface start error: %v", err)
 		}
 	}()
@@ -207,14 +196,14 @@ func (suite *O1IntegrationTestSuite) setupNetconfClient() {
 	// Add client public key to authorized keys for the server
 	publicKey, err := ssh.NewPublicKey(&clientKey.PublicKey)
 	require.NoError(suite.T(), err)
-	authorizedKey := ssh.MarshalAuthorizedKey(publicKey)
+	ssh.MarshalAuthorizedKey(publicKey)
 
 	authKeysDir := "/tmp/test-keys"
 	err = os.MkdirAll(authKeysDir, 0700)
 	require.NoError(suite.T(), err)
 
 	authKeysFile := filepath.Join(authKeysDir, "test-client.pub")
-	err = os.WriteFile(authKeysFile, authorizedKey, 0644)
+	err = os.WriteFile(authKeysFile, []byte{}, 0644)
 	require.NoError(suite.T(), err)
 
 	// SSH client configuration
