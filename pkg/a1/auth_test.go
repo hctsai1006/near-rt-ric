@@ -50,44 +50,66 @@ func TestAuthMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	t.Run("ValidToken", func(t *testing.T) {
-		claims := &Claims{
-			Roles: []string{"admin"},
-			RegisteredClaims: jwt.RegisteredClaims{
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-			},
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-		tokenString, err := token.SignedString(privateKey)
-		require.NoError(t, err)
+	tests := []struct {
+		name           string
+		token          string
+		expectedStatus int
+	}{
+		{
+			name: "ValidToken",
+			token: func() string {
+				claims := &Claims{
+					Roles: []string{"admin"},
+					RegisteredClaims: jwt.RegisteredClaims{
+						ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+					},
+				}
+				token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+				tokenString, _ := token.SignedString(privateKey)
+				return tokenString
+			}(),
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "InvalidToken",
+			token: "invalid-token",
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "NoAuthHeader",
+			token: "",
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "ExpiredToken",
+			token: func() string {
+				claims := &Claims{
+					Roles: []string{"admin"},
+					RegisteredClaims: jwt.RegisteredClaims{
+						ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
+					},
+				}
+				token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+				tokenString, _ := token.SignedString(privateKey)
+				return tokenString
+			}(),
+			expectedStatus: http.StatusUnauthorized,
+		},
+	}
 
-		req := httptest.NewRequest("GET", "/", nil)
-		req.Header.Set("Authorization", "Bearer "+tokenString)
-		rr := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+			rr := httptest.NewRecorder()
 
-		authMiddleware.Middleware(testHandler).ServeHTTP(rr, req)
+			authMiddleware.Middleware(testHandler).ServeHTTP(rr, req)
 
-		assert.Equal(t, http.StatusOK, rr.Code)
-	})
-
-	t.Run("InvalidToken", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		req.Header.Set("Authorization", "Bearer invalid-token")
-		rr := httptest.NewRecorder()
-
-		authMiddleware.Middleware(testHandler).ServeHTTP(rr, req)
-
-		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	})
-
-	t.Run("NoAuthHeader", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		rr := httptest.NewRecorder()
-
-		authMiddleware.Middleware(testHandler).ServeHTTP(rr, req)
-
-		assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	})
+			assert.Equal(t, tt.expectedStatus, rr.Code)
+		})
+	}
 }
 
 func TestAuthorization(t *testing.T) {
@@ -95,25 +117,48 @@ func TestAuthorization(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	t.Run("AdminAccess", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		ctx := context.WithValue(req.Context(), "roles", []string{"admin"})
-		req = req.WithContext(ctx)
-		rr := httptest.NewRecorder()
+	tests := []struct {
+		name           string
+		roles          []string
+		requiredRole   Role
+		expectedStatus int
+	}{
+		{
+			name: "AdminAccess",
+			roles: []string{"admin"},
+			requiredRole: AdminRole,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "OperatorAccessDenied",
+			roles: []string{"operator"},
+			requiredRole: AdminRole,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "NoRoles",
+			roles: []string{},
+			requiredRole: AdminRole,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "ViewerAccessToViewer",
+			roles: []string{"viewer"},
+			requiredRole: ViewerRole,
+			expectedStatus: http.StatusOK,
+		},
+	}
 
-		Authorize(testHandler, AdminRole).ServeHTTP(rr, req)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			ctx := context.WithValue(req.Context(), "roles", tt.roles)
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
 
-		assert.Equal(t, http.StatusOK, rr.Code)
-	})
+			Authorize(testHandler, tt.requiredRole).ServeHTTP(rr, req)
 
-	t.Run("OperatorAccessDenied", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		ctx := context.WithValue(req.Context(), "roles", []string{"operator"})
-		req = req.WithContext(ctx)
-		rr := httptest.NewRecorder()
-
-		Authorize(testHandler, AdminRole).ServeHTTP(rr, req)
-
-		assert.Equal(t, http.StatusForbidden, rr.Code)
-	})
+			assert.Equal(t, tt.expectedStatus, rr.Code)
+		})
+	}
 }

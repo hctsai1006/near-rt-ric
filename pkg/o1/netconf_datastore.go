@@ -3,6 +3,7 @@ package o1
 import (
 	"encoding/xml"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -90,14 +91,21 @@ func (ds *NetconfDatastore) EditConfig(target DatastoreType, config string, oper
 		return fmt.Errorf("invalid target datastore for edit-config: %s", target)
 	}
 
-	var newConfig map[string]string
-	if err := xml.Unmarshal([]byte(config), &newConfig); err != nil {
-		// If unmarshal fails, assume it's a simple key-value pair for now.
+	// Simple regex to extract key-value pairs from the config string.
+	re := regexp.MustCompile(`<([^>]+)>([^<]+)</[^>]+>`)
+	matches := re.FindAllStringSubmatch(config, -1)
+
+	if len(matches) == 0 && operation != "replace" {
 		if operation == "unsupported" {
 			return fmt.Errorf("unsupported edit-config operation: %s", operation)
 		}
 		targetData[config] = ""
 		return nil
+	}
+
+	newConfig := make(map[string]string)
+	for _, match := range matches {
+		newConfig[match[1]] = match[2]
 	}
 
 	switch operation {

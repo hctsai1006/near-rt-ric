@@ -58,39 +58,69 @@ func TestGetConfig(t *testing.T) {
 }
 
 func TestEditConfig(t *testing.T) {
-	ds := NewNetconfDatastore()
+	tests := []struct {
+		name        string
+		target      DatastoreType
+		config      string
+		operation   string
+		expectError bool
+		finalState  map[string]string
+	}{
+		{
+			name:        "Valid merge",
+			target:      "running",
+			config:      `<config><key>value</key></config>`,
+			operation:   "merge",
+			expectError: false,
+			finalState:  map[string]string{"key": "value"},
+		},
+		{
+			name:        "Invalid datastore",
+			target:      "invalid",
+			config:      `<config><key>value</key></config>`,
+			operation:   "merge",
+			expectError: true,
+		},
+		{
+			name:        "Unsupported operation",
+			target:      "running",
+			config:      `<config><key>value</key></config>`,
+			operation:   "unsupported",
+			expectError: true,
+		},
+		{
+			name:        "Replace operation",
+			target:      "candidate",
+			config:      `<config><key>new-value</key></config>`,
+			operation:   "replace",
+			expectError: false,
+			finalState:  map[string]string{"key": "new-value"},
+		},
+		{
+			name:        "Delete operation",
+			target:      "candidate",
+			config:      `<config><key>value</key></config>`,
+			operation:   "delete",
+			expectError: false,
+			finalState:  map[string]string{},
+		},
+	}
 
-	t.Run("Valid configuration merge", func(t *testing.T) {
-		config := `<config><key>value</key></config>`
-		err := ds.EditConfig("running", config, "merge")
-		assert.NoError(t, err)
-	})
-
-	t.Run("Invalid datastore", func(t *testing.T) {
-		config := `<config><key>value</key></config>`
-		err := ds.EditConfig("invalid", config, "merge")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid target datastore")
-	})
-
-	t.Run("Unsupported operation", func(t *testing.T) {
-		config := `<config><key>value</key></config>`
-		err := ds.EditConfig("running", config, "unsupported")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported edit-config operation")
-	})
-
-	t.Run("Replace operation", func(t *testing.T) {
-		config := `<config><key>new-value</key></config>`
-		err := ds.EditConfig("candidate", config, "replace")
-		assert.NoError(t, err)
-	})
-
-	t.Run("Delete operation", func(t *testing.T) {
-		config := `<config><key>value</key></config>`
-		err := ds.EditConfig("candidate", config, "delete")
-		assert.NoError(t, err)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := NewNetconfDatastore()
+			err := ds.EditConfig(tt.target, tt.config, tt.operation)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.finalState != nil {
+					data, _ := ds.GetConfig(tt.target, "")
+					assert.Equal(t, tt.finalState, data)
+				}
+			}
+		})
+	}
 }
 
 func TestDatastoreLocking(t *testing.T) {

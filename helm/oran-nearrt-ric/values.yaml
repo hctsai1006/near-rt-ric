@@ -120,8 +120,7 @@ redis:
   enabled: true
   auth:
     enabled: true
-    existingSecret: "redis-secret"
-    existingSecretPasswordKey: "password"
+    password: "{{ .Values.security.redisPassword }}"
   architecture: standalone
   tls:
     enabled: true
@@ -131,8 +130,7 @@ redis:
 postgresql:
   enabled: true
   auth:
-    existingSecret: "postgres-secret"
-    existingSecretPasswordKey: "password"
+    password: "{{ .Values.security.postgresPassword }}"
     username: "fl_user"
     database: "fl_coordinator"
   tls:
@@ -227,13 +225,13 @@ security:
   secrets:
     # External secret management (e.g., Vault, AWS Secrets Manager)
     external:
-      enabled: false
-      provider: "vault" # vault, aws, azure, gcp
+      enabled: true
+      provider: "kubernetes" # vault, aws, azure, gcp
       
   # Passwords and Keys (use external secrets in production)
-  redisPassword: "SecureOran2024!"
-  postgresPassword: "SecureOran2024!"
-  grafanaAdminPassword: "SecureOran2024!"
+  redisPassword: ""
+  postgresPassword: ""
+  grafanaAdminPassword: ""
   
   # Audit Logging
   audit:
