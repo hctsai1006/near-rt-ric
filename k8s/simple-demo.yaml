@@ -54,7 +54,7 @@ metadata:
   name: oran-dashboard-content
   namespace: oran-nearrt-ric
 data:
-  index.html:  < /dev/null | 
+  index.html: | 
     <!DOCTYPE html>
     <html>
     <head>

@@ -1,3 +1,4 @@
+# kubeconform-skip
 # Pod Security Standards for O-RAN Near-RT RIC
 apiVersion: v1
 kind: Namespace
