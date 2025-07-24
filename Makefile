@@ -247,13 +247,13 @@ build-debug: ## Build with debug symbols
 ##@ Container Images
 docker-build: ## Build all Docker images
 	@echo "$(YELLOW)Building Docker images...$(NC)"
-	@$(DOCKER_CMD) build -t $(NEAR_RT_RIC_IMAGE):latest -f Dockerfile .
-	@$(DOCKER_CMD) build -t $(FRONTEND_DASHBOARD_IMAGE):latest -f $(FRONTEND_DASHBOARD_DIR)/Dockerfile .
+	@$(DOCKER_CMD) build -t $(MAIN_IMAGE):latest -f Dockerfile .
+	@$(DOCKER_CMD) build -t $(FRONTEND_IMAGE):latest -f docker/Dockerfile.dashboard .
 
 docker-push: ## Push Docker images to registry
 	@echo "$(YELLOW)Pushing Docker images...$(NC)"
-	@$(DOCKER_CMD) push $(NEAR_RT_RIC_IMAGE):latest
-	@$(DOCKER_CMD) push $(FRONTEND_DASHBOARD_IMAGE):latest
+	@$(DOCKER_CMD) push $(MAIN_IMAGE):latest
+	@$(DOCKER_CMD) push $(FRONTEND_IMAGE):latest
 
 ##@ Helm Charts
 helm-lint: ## Lint all Helm charts

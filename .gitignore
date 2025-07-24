@@ -100,3 +100,4 @@ benchmark-results.txt
 
 # Performance test outputs
 perf/results/
+\"*.out\" 
