@@ -1,4 +1,238 @@
-k8s-validation:
+name: O-RAN Near-RT RIC CI - Fixed
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.21"
+  NODE_VERSION: "18"
+  GOLANGCILINT_VERSION: "v1.54.2"
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Check Go formatting
+      run: |
+        unformatted=$(gofmt -s -l .)
+        if [ ! -z "$unformatted" ]; then
+          echo "The following files are not formatted correctly:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+    - name: Run go vet
+      run: go vet ./...
+
+    - name: Build core packages
+      run: |
+        go build ./internal/config
+        go build ./pkg/e2
+        go build ./pkg/common/...
+        go build ./pkg/a1
+        go build ./pkg/o1
+        go build ./pkg/xapp
+
+    - name: Build main applications
+      run: |
+        go build ./cmd/ric
+        go build ./cmd/near-rt-ric
+
+    - name: Run core package tests
+      run: |
+        go test -v -short ./internal/config
+        go test -v -short ./pkg/common/...
+        go test -v -short ./pkg/e2
+
+  lint-and-quality:
+    name: Lint and Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache golangci-lint
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/golangci-lint
+        key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCILINT_VERSION }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-golangci-lint-${{ env.GOLANGCILINT_VERSION }}-
+
+    - name: Install golangci-lint
+      run: |
+        if ! command -v golangci-lint &> /dev/null
+        then
+            curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin ${{ env.GOLANGCILINT_VERSION }}
+            echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+        fi
+
+    - name: Run Go Lint
+      run: golangci-lint run --timeout=5m
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Run Helm Lint
+      run: |
+        if [ -d "helm/near-rt-ric" ]; then
+          helm lint helm/near-rt-ric/
+          helm template test helm/near-rt-ric/ | kubectl apply --dry-run=client -f -
+        fi
+
+    - name: Run Tests with Coverage
+      run: |
+        echo "Generating coverage report..."
+        go test -coverprofile=coverage.out -covermode=atomic ./...
+        
+        if [ -f coverage.out ]; then
+          coverage=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | sed 's/%//')
+          echo "Current coverage: ${coverage}%"
+          
+          if (( $(echo "$coverage >= 80" | bc -l) )); then
+            echo "✅ Coverage ${coverage}% meets 80% threshold"
+          else
+            echo "⚠️  Coverage ${coverage}% is below 80% target"
+            go tool cover -func=coverage.out | grep -v "100.0%"
+            exit 1
+          fi
+        else
+          echo "No coverage report generated"
+          exit 1
+        fi
+
+    - name: Upload Coverage Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coverage.out
+        retention-days: 30
+      if: always()
+
+  # All other jobs remain the same
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend-dashboard
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend-dashboard/package.json
+
+    - name: Install dependencies
+      run: npm ci || npm install
+
+    - name: Check for TypeScript/Angular setup
+      run: |
+        if [ -f "angular.json" ]; then
+          echo "Angular project detected"
+          npm run build --if-present
+          npm run test --if-present -- --watch=false --browsers=ChromeHeadless
+        else
+          echo "Non-Angular project - basic validation"
+        fi
+
+    - name: Validate package.json
+      run: npm ls --depth=0
+
+  docker-validation:
+    name: Docker Validation
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Validate main Dockerfile
+      run: |
+        if [ -f "Dockerfile" ]; then
+          docker build -t test-ric . --dry-run
+        fi
+
+    - name: Validate Docker Compose
+      run: |
+        if [ -f "docker-compose.yml" ]; then
+          docker-compose config
+        fi
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'table'
+        exit-code: '1'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Check for sensitive files
+      run: |
+        echo "Checking for sensitive files..."
+        if find . -name "*.key" -o -name "*.pem" -o -name "*.crt" | grep -v "test"; then
+          echo "Error: Sensitive files found in repository."
+          exit 1
+        fi
+
+  k8s-validation:
     name: Kubernetes Validation
     runs-on: ubuntu-latest
     
@@ -6,14 +240,9 @@ k8s-validation:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'latest'
-
-    - name: Set up kubeconform
+    - name: Install kubeconform
       run: |
-        curl -L https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+        curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
         sudo mv kubeconform /usr/local/bin
 
     - name: Validate Kubernetes manifests
@@ -36,3 +265,33 @@ k8s-validation:
             fi
           done
         fi
+
+  status-report:
+    name: CI Status Report
+    runs-on: ubuntu-latest
+    needs: [build-and-test, lint-and-quality, frontend-build, docker-validation, security-scan, k8s-validation]
+    if: always()
+    
+    steps:
+    - name: Generate Status Report
+      run: |
+        echo "# O-RAN Near-RT RIC CI Status Report" > status-report.md
+        echo "Generated on: $(date)" >> status-report.md
+        echo "" >> status-report.md
+        echo "## Job Status:" >> status-report.md
+        echo "- Build and Test: ${{ needs.build-and-test.result }}" >> status-report.md
+        echo "- Lint and Quality: ${{ needs.lint-and-quality.result }}" >> status-report.md
+        echo "- Frontend Build: ${{ needs.frontend-build.result }}" >> status-report.md  
+        echo "- Docker Validation: ${{ needs.docker-validation.result }}" >> status-report.md
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> status-report.md
+        echo "- K8s Validation: ${{ needs.k8s-validation.result }}" >> status-report.md
+        echo "" >> status-report.md
+        echo "## Notes:" >> status-report.md
+        echo "- CI pipeline has been fixed and is now enforcing quality gates." >> status-report.md
+        
+    - name: Upload Status Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-status-report
+        path: status-report.md
+        retention-days: 30
