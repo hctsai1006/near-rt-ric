@@ -145,7 +145,7 @@ services:
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - KAFKA_BROKERS=kafka:9092
     volumes:
-      - ./configs:/app/configs
+      - ./config:/app/configs
       - ./logs:/app/logs
       - ric_data:/app/data
     ports:
@@ -182,7 +182,7 @@ services:
       - DB_HOST=postgres
       - INFLUX_URL=http://influxdb:8086
     volumes:
-      - ./configs:/app/configs
+      - ./config:/app/configs
       - ./logs:/app/logs
     ports:
       - "36421:36421"  # E2 SCTP primary
@@ -211,7 +211,7 @@ services:
       - DB_HOST=postgres
       - REDIS_ADDR=redis:6379
     volumes:
-      - ./configs:/app/configs
+      - ./config:/app/configs
       - ./logs:/app/logs
       - ./policies:/app/policies
     ports:
@@ -239,7 +239,7 @@ services:
       - CONFIG_PATH=/app/configs/o1-config.yaml
       - DB_HOST=postgres
     volumes:
-      - ./configs:/app/configs
+      - ./config:/app/configs
       - ./logs:/app/logs
       - ./yang:/app/yang
     ports:
@@ -269,7 +269,7 @@ services:
       - DB_HOST=postgres
       - KAFKA_BROKERS=kafka:9092
     volumes:
-      - ./configs:/app/configs
+      - ./config:/app/configs
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker-based xApp deployment
     ports:
@@ -297,7 +297,7 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
@@ -321,8 +321,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
     ports:
       - "3000:3000"
     networks:

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 )
 
 func TestE2SetupProcedure(t *testing.T) {
@@ -17,12 +17,12 @@ func TestE2SetupProcedure(t *testing.T) {
 
 	// Create E2 Setup Request
 	setupReq := &models.E2SetupRequest{
-		GlobalE2NodeID: models.GlobalE2NodeID{
+		GlobalE2NodeID: &models.GlobalE2NodeID{
 			GNB_ID: &models.GNB_ID{
 				GNB_ID: []byte{0x12, 0x34, 0x56},
 			},
 		},
-		RANfunctions: []models.RANfunction{
+		RANfunctions: []*models.RANfunction{
 			{
 				RANfunctionID:         1,
 				RANfunctionDefinition: []byte("KPM_function_definition"),
@@ -40,27 +40,27 @@ func TestE2SetupProcedure(t *testing.T) {
 	response, err := e2Interface.SendE2SetupRequest("test_node", setupReq)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
-	assert.Equal(t, models.E2SetupRequestID, response.ProcedureCode)
+	assert.Equal(t, models.E2_SETUP_RESPONSE, response.ProcedureCode)
 }
 
 func TestRICSubscriptionProcedure(t *testing.T) {
-	e2Interface := NewE2Interface(":36421")
+	e2Interface := NewE2Interface(":36422") // Use a different port to avoid conflict
 	require.NoError(t, e2Interface.Start())
 	defer e2Interface.Stop()
 
 	// Test subscription request
-	subReq := &models.RICSubscriptionRequest{
-		RICrequestID: models.RICRequestID{
+	subReq := &models.RICsubscriptionRequest{
+		RICrequestID: &models.RICrequestID{
 			RICrequestorID: 1,
 			RICinstanceID:  1,
 		},
 		RANfunctionID: 1,
-		RICsubscriptionDetails: models.RICSubscriptionDetails{
+		RICsubscriptionDetails: &models.RICsubscriptionDetails{
 			RICeventTriggerDefinition: []byte("trigger_definition"),
-			RICactions: []models.RICAction{
+			RICactions: []*models.RICaction{
 				{
 					RICactionID:   1,
-					RICactionType: models.RICActionTypeReport,
+					RICactionType: models.Report,
 				},
 			},
 		},
@@ -68,11 +68,11 @@ func TestRICSubscriptionProcedure(t *testing.T) {
 
 	response, err := e2Interface.CreateSubscription("test_node", subReq)
 	require.NoError(t, err)
-	assert.Equal(t, models.RICSubscriptionRequestID, response.ProcedureCode)
+	assert.Equal(t, models.RIC_SUBSCRIPTION_RESPONSE, response.ProcedureCode)
 }
 
 func TestE2PerformanceRequirements(t *testing.T) {
-	e2Interface := NewE2Interface(":36421")
+	e2Interface := NewE2Interface(":36423") // Use a different port
 	require.NoError(t, e2Interface.Start())
 	defer e2Interface.Stop()
 
@@ -80,7 +80,7 @@ func TestE2PerformanceRequirements(t *testing.T) {
 	start := time.Now()
 
 	setupReq := &models.E2SetupRequest{
-		GlobalE2NodeID: models.GlobalE2NodeID{
+		GlobalE2NodeID: &models.GlobalE2NodeID{
 			GNB_ID: &models.GNB_ID{
 				GNB_ID: []byte{0xAB, 0xCD, 0xEF},
 			},

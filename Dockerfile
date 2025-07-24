@@ -106,7 +106,7 @@ COPY --from=builder --chown=65532:65532 /build/e2-simulator /e2-simulator
 COPY --from=builder --chown=65532:65532 /build/ric-a1 /ric-a1
 
 # Copy configuration templates (will be overridden by ConfigMaps in K8s)
-COPY --from=builder --chown=65532:65532 /build/configs /configs
+COPY --from=builder --chown=65532:65532 /build/config /configs
 
 # Security: Use distroless nonroot user (UID 65532)
 USER 65532:65532

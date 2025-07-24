@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hctsai1006/near-rt-ric/internal/config"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/ishidawataru/sctp"
 	"github.com/sirupsen/logrus"
 )
@@ -32,7 +33,7 @@ type SCTPServer struct {
 	
 	// Event handling
 	messageHandler    func(connectionID, nodeID string, data []byte)
-	connectionHandler func(event *ConnectionEvent)
+	connectionHandler func(event *models.ConnectionEvent)
 	
 	// Control and synchronization
 	ctx            context.Context
@@ -249,7 +250,7 @@ func (s *SCTPServer) SetMessageHandler(handler func(connectionID, nodeID string,
 }
 
 // SetConnectionHandler sets the handler for connection events
-func (s *SCTPServer) SetConnectionHandler(handler func(event *ConnectionEvent)) {
+func (s *SCTPServer) SetConnectionHandler(handler func(event *models.ConnectionEvent)) {
 	s.connectionHandler = handler
 }
 
@@ -382,8 +383,8 @@ func (s *SCTPServer) handleNewConnection(conn *sctp.SCTPConn) {
 	s.stats.ActiveConnections.Store(s.currentConnections.Load())
 	
 	// Send connection event
-	s.sendConnectionEvent(&ConnectionEvent{
-		Type:         ConnectionEstablished,
+	s.sendConnectionEvent(&models.ConnectionEvent{
+		Type:         models.ConnectionEstablished,
 		ConnectionID: connectionID,
 		RemoteAddr:   remoteAddr.String(),
 		Timestamp:    time.Now(),
@@ -579,8 +580,8 @@ func (s *SCTPServer) cleanupConnection(conn *SCTPConnection) {
 	s.stats.ActiveConnections.Store(s.currentConnections.Load())
 	
 	// Send connection event
-	s.sendConnectionEvent(&ConnectionEvent{
-		Type:         ConnectionClosed,
+	s.sendConnectionEvent(&models.ConnectionEvent{
+		Type:         models.ConnectionClosed,
 		ConnectionID: conn.ID,
 		NodeID:       conn.NodeID,
 		RemoteAddr:   conn.RemoteAddr.String(),
@@ -706,7 +707,7 @@ func (s *SCTPServer) logStatistics() {
 }
 
 // sendConnectionEvent sends a connection event if handler is configured
-func (s *SCTPServer) sendConnectionEvent(event *ConnectionEvent) {
+func (s *SCTPServer) sendConnectionEvent(event *models.ConnectionEvent) {
 	if s.connectionHandler != nil {
 		s.connectionHandler(event)
 	}

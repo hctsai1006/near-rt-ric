@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,12 +21,12 @@ type SubscriptionManager struct {
 	codec   *ASN1Codec
 
 	// Subscription storage
-	subscriptions      map[string]*RICSubscription
+	subscriptions      map[string]*models.RICSubscription
 	subscriptionsMutex sync.RWMutex
 	
 	// Indexing for fast lookups
-	subscriptionsByNode    map[string][]*RICSubscription
-	subscriptionsByRequest map[string]*RICSubscription
+	subscriptionsByNode    map[string][]*models.RICSubscription
+	subscriptionsByRequest map[string]*models.RICSubscription
 	
 	// Event handling
 	eventHandlers []SubscriptionEventHandler
@@ -42,17 +43,17 @@ type SubscriptionManager struct {
 
 // SubscriptionEventHandler defines interface for handling subscription events
 type SubscriptionEventHandler interface {
-	OnSubscriptionCreated(subscription *RICSubscription)
-	OnSubscriptionUpdated(subscription *RICSubscription)
-	OnSubscriptionDeleted(subscription *RICSubscription)
-	OnSubscriptionExpired(subscription *RICSubscription)
-	OnSubscriptionError(subscription *RICSubscription, err error)
+	OnSubscriptionCreated(subscription *models.RICSubscription)
+	OnSubscriptionUpdated(subscription *models.RICSubscription)
+	OnSubscriptionDeleted(subscription *models.RICSubscription)
+	OnSubscriptionExpired(subscription *models.RICSubscription)
+	OnSubscriptionError(subscription *models.RICSubscription, err error)
 }
 
 // SubscriptionEvent represents a subscription lifecycle event
 type SubscriptionEvent struct {
 	Type         SubscriptionEventType
-	Subscription *RICSubscription
+	Subscription *models.RICSubscription
 	Timestamp    time.Time
 	Error        error
 	Details      map[string]interface{}
@@ -76,12 +77,12 @@ func NewSubscriptionManager(config *config.E2Config, logger *logrus.Logger, metr
 
 	return &SubscriptionManager{
 		config:                 config,
-		logger:                 logger.WithField("component", "subscription-manager").Logger,
+				logger:                 logger.WithField("component", "subscription-manager"),
 		metrics:               metrics,
 		codec:                 codec,
-		subscriptions:         make(map[string]*RICSubscription),
-		subscriptionsByNode:   make(map[string][]*RICSubscription),
-		subscriptionsByRequest: make(map[string]*RICSubscription),
+		subscriptions:         make(map[string]*models.RICSubscription),
+		subscriptionsByNode:   make(map[string][]*models.RICSubscription),
+		subscriptionsByRequest: make(map[string]*models.RICSubscription),
 		ctx:                   ctx,
 		cancel:                cancel,
 		defaultTimeout:        30 * time.Second,
@@ -89,45 +90,8 @@ func NewSubscriptionManager(config *config.E2Config, logger *logrus.Logger, metr
 	}
 }
 
-// Start starts the subscription manager
-func (sm *SubscriptionManager) Start(ctx context.Context) error {
-	sm.logger.Info("Starting E2 Subscription Manager")
-
-	// Start background workers
-	sm.wg.Add(2)
-	go sm.expirationMonitor()
-	go sm.statisticsCollector()
-
-	sm.logger.Info("E2 Subscription Manager started successfully")
-	return nil
-}
-
-// Stop stops the subscription manager
-func (sm *SubscriptionManager) Stop(ctx context.Context) error {
-	sm.logger.Info("Stopping E2 Subscription Manager")
-
-	// Cancel context to stop background workers
-	sm.cancel()
-
-	// Wait for workers to finish with timeout
-	done := make(chan struct{})
-	go func() {
-		sm.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		sm.logger.Info("E2 Subscription Manager stopped successfully")
-	case <-ctx.Done():
-		sm.logger.Warn("E2 Subscription Manager shutdown timeout")
-	}
-
-	return nil
-}
-
 // CreateSubscription creates a new RIC subscription
-func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscriptionRequest) (*RICSubscription, error) {
+func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *models.RICSubscriptionRequest) (*models.RICSubscription, error) {
 	sm.subscriptionsMutex.Lock()
 	defer sm.subscriptionsMutex.Unlock()
 
@@ -135,7 +99,7 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 	subscriptionID := uuid.New().String()
 
 	// Create request key for tracking
-	requestKey := sm.getRequestKey(nodeID, req.RICRequestID)
+	requestKey := sm.getRequestKey(nodeID, *req.RICrequestID)
 
 	// Check if subscription already exists for this request
 	if _, exists := sm.subscriptionsByRequest[requestKey]; exists {
@@ -148,18 +112,18 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 	}
 
 	// Create subscription
-	subscription := &RICSubscription{
-		RequestID:            req.RICRequestID,
+	subscription := &models.RICSubscription{
+		RequestID:            *req.RICrequestID,
 		SubscriptionID:       subscriptionID,
 		NodeID:              nodeID,
-		RANFunctionID:       req.RANFunctionID,
-		SubscriptionDetails: req.RICSubscriptionDetails,
-		Status:              SubscriptionStatusPending,
+		RANFunctionID:       req.RANfunctionID,
+		SubscriptionDetails: *req.RICsubscriptionDetails,
+		Status:              models.SubscriptionStatusPending,
 		CreatedAt:           time.Now(),
 		LastIndication:      time.Time{},
-		Actions:             req.RICSubscriptionDetails.RICActions,
+		Actions:             req.RICsubscriptionDetails.RICactions,
 		AdmittedActions:     make([]int64, 0),
-		RejectedActions:     make([]RICActionNotAdmitted, 0),
+		RejectedActions:     make([]models.RICActionNotAdmitted, 0),
 	}
 
 	// Set expiration if configured
@@ -174,7 +138,7 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 
 	// Add to node index
 	if sm.subscriptionsByNode[nodeID] == nil {
-		sm.subscriptionsByNode[nodeID] = make([]*RICSubscription, 0)
+		sm.subscriptionsByNode[nodeID] = make([]*models.RICSubscription, 0)
 	}
 	sm.subscriptionsByNode[nodeID] = append(sm.subscriptionsByNode[nodeID], subscription)
 
@@ -184,8 +148,8 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 	sm.logger.WithFields(logrus.Fields{
 		"subscription_id": subscriptionID,
 		"node_id":        nodeID,
-		"ran_function_id": req.RANFunctionID,
-		"request_id":     fmt.Sprintf("%d-%d", req.RICRequestID.RICRequestorID, req.RICRequestID.RICInstanceID),
+		"ran_function_id": req.RANfunctionID,
+		"request_id":     fmt.Sprintf("%d-%d", req.RICrequestID.RICrequestorID, req.RICrequestID.RICInstanceID),
 	}).Info("RIC subscription created")
 
 	// Send event
@@ -199,7 +163,7 @@ func (sm *SubscriptionManager) CreateSubscription(nodeID string, req *RICSubscri
 }
 
 // ProcessSubscriptionResponse processes a subscription response from E2 node
-func (sm *SubscriptionManager) ProcessSubscriptionResponse(nodeID string, resp *RICSubscriptionResponse) error {
+func (sm *SubscriptionManager) ProcessSubscriptionResponse(nodeID string, resp *models.RICSubscriptionResponse) error {
 	sm.subscriptionsMutex.Lock()
 	defer sm.subscriptionsMutex.Unlock()
 
@@ -211,7 +175,7 @@ func (sm *SubscriptionManager) ProcessSubscriptionResponse(nodeID string, resp *
 	}
 
 	// Update subscription with response
-	subscription.Status = SubscriptionStatusActive
+	subscription.Status = models.SubscriptionStatusActive
 	subscription.AdmittedActions = make([]int64, len(resp.RICActionAdmitted))
 	for i, action := range resp.RICActionAdmitted {
 		subscription.AdmittedActions[i] = action.RICActionID
@@ -241,7 +205,7 @@ func (sm *SubscriptionManager) ProcessSubscriptionResponse(nodeID string, resp *
 }
 
 // ProcessSubscriptionFailure processes a subscription failure from E2 node
-func (sm *SubscriptionManager) ProcessSubscriptionFailure(nodeID string, failure *RICSubscriptionFailure) error {
+func (sm *SubscriptionManager) ProcessSubscriptionFailure(nodeID string, failure *models.RICSubscriptionFailure) error {
 	sm.subscriptionsMutex.Lock()
 	defer sm.subscriptionsMutex.Unlock()
 
@@ -253,7 +217,7 @@ func (sm *SubscriptionManager) ProcessSubscriptionFailure(nodeID string, failure
 	}
 
 	// Update subscription status
-	subscription.Status = SubscriptionStatusFailed
+	subscription.Status = models.SubscriptionStatusFailed
 	subscription.RejectedActions = failure.RICActionNotAdmitted
 	subscription.ErrorCount++
 
@@ -279,56 +243,8 @@ func (sm *SubscriptionManager) ProcessSubscriptionFailure(nodeID string, failure
 	return nil
 }
 
-// DeleteSubscription deletes a RIC subscription
-func (sm *SubscriptionManager) DeleteSubscription(subscriptionID string) error {
-	sm.subscriptionsMutex.Lock()
-	defer sm.subscriptionsMutex.Unlock()
-
-	subscription, exists := sm.subscriptions[subscriptionID]
-	if !exists {
-		return fmt.Errorf("subscription %s not found", subscriptionID)
-	}
-
-	// Update subscription status
-	subscription.Status = SubscriptionStatusDeleted
-
-	// Remove from all indices
-	delete(sm.subscriptions, subscriptionID)
-	
-	requestKey := sm.getRequestKey(subscription.NodeID, subscription.RequestID)
-	delete(sm.subscriptionsByRequest, requestKey)
-
-	// Remove from node index
-	if nodeSubscriptions, exists := sm.subscriptionsByNode[subscription.NodeID]; exists {
-		for i, sub := range nodeSubscriptions {
-			if sub.SubscriptionID == subscriptionID {
-				// Remove from slice
-				sm.subscriptionsByNode[subscription.NodeID] = append(nodeSubscriptions[:i], nodeSubscriptions[i+1:]...)
-				break
-			}
-		}
-	}
-
-	// Update metrics
-	sm.metrics.E2Metrics.ActiveSubscriptions.Dec()
-
-	sm.logger.WithFields(logrus.Fields{
-		"subscription_id": subscriptionID,
-		"node_id":        subscription.NodeID,
-	}).Info("RIC subscription deleted")
-
-	// Send event
-	sm.sendEvent(SubscriptionEvent{
-		Type:         SubscriptionEventDeleted,
-		Subscription: subscription,
-		Timestamp:    time.Now(),
-	})
-
-	return nil
-}
-
 // ProcessSubscriptionDeleteResponse processes a subscription delete response
-func (sm *SubscriptionManager) ProcessSubscriptionDeleteResponse(nodeID string, resp *RICSubscriptionDeleteResponse) error {
+func (sm *SubscriptionManager) ProcessSubscriptionDeleteResponse(nodeID string, resp *models.RICSubscriptionDeleteResponse) error {
 	requestKey := sm.getRequestKey(nodeID, resp.RICRequestID)
 	
 	sm.subscriptionsMutex.RLock()
@@ -344,7 +260,7 @@ func (sm *SubscriptionManager) ProcessSubscriptionDeleteResponse(nodeID string, 
 }
 
 // ProcessIndicationMessage processes a RIC indication message
-func (sm *SubscriptionManager) ProcessIndicationMessage(nodeID string, indication *RICIndication) error {
+func (sm *SubscriptionManager) ProcessIndicationMessage(nodeID string, indication *models.RICIndication) error {
 	sm.subscriptionsMutex.Lock()
 	defer sm.subscriptionsMutex.Unlock()
 
@@ -384,7 +300,7 @@ func (sm *SubscriptionManager) ProcessIndicationMessage(nodeID string, indicatio
 }
 
 // GetSubscription retrieves a subscription by ID
-func (sm *SubscriptionManager) GetSubscription(subscriptionID string) (*RICSubscription, error) {
+func (sm *SubscriptionManager) GetSubscription(subscriptionID string) (*models.RICSubscription, error) {
 	sm.subscriptionsMutex.RLock()
 	defer sm.subscriptionsMutex.RUnlock()
 
@@ -397,27 +313,27 @@ func (sm *SubscriptionManager) GetSubscription(subscriptionID string) (*RICSubsc
 }
 
 // GetSubscriptionsByNode retrieves all subscriptions for a node
-func (sm *SubscriptionManager) GetSubscriptionsByNode(nodeID string) []*RICSubscription {
+func (sm *SubscriptionManager) GetSubscriptionsByNode(nodeID string) []*models.RICSubscription {
 	sm.subscriptionsMutex.RLock()
 	defer sm.subscriptionsMutex.RUnlock()
 
 	subscriptions := sm.subscriptionsByNode[nodeID]
 	if subscriptions == nil {
-		return make([]*RICSubscription, 0)
+		return make([]*models.RICSubscription, 0)
 	}
 
 	// Return a copy to prevent external modification
-	result := make([]*RICSubscription, len(subscriptions))
+	result := make([]*models.RICSubscription, len(subscriptions))
 	copy(result, subscriptions)
 	return result
 }
 
 // GetAllSubscriptions returns all active subscriptions
-func (sm *SubscriptionManager) GetAllSubscriptions() []*RICSubscription {
+func (sm *SubscriptionManager) GetAllSubscriptions() []*models.RICSubscription {
 	sm.subscriptionsMutex.RLock()
 	defer sm.subscriptionsMutex.RUnlock()
 
-	subscriptions := make([]*RICSubscription, 0, len(sm.subscriptions))
+	subscriptions := make([]*models.RICSubscription, 0, len(sm.subscriptions))
 	for _, subscription := range sm.subscriptions {
 		subscriptions = append(subscriptions, subscription)
 	}
@@ -425,35 +341,30 @@ func (sm *SubscriptionManager) GetAllSubscriptions() []*RICSubscription {
 	return subscriptions
 }
 
-// AddEventHandler adds a subscription event handler
-func (sm *SubscriptionManager) AddEventHandler(handler SubscriptionEventHandler) {
-	sm.eventHandlers = append(sm.eventHandlers, handler)
-}
-
 // validateSubscriptionRequest validates a subscription request
-func (sm *SubscriptionManager) validateSubscriptionRequest(req *RICSubscriptionRequest) error {
-	if req.RICRequestID.RICRequestorID < 0 {
-		return fmt.Errorf("invalid RIC requestor ID: %d", req.RICRequestID.RICRequestorID)
+func (sm *SubscriptionManager) validateSubscriptionRequest(req *models.RICSubscriptionRequest) error {
+	if req.RICrequestID.RICRequestorID < 0 {
+		return fmt.Errorf("invalid RIC requestor ID: %d", req.RICrequestID.RICRequestorID)
 	}
 
-	if req.RICRequestID.RICInstanceID < 0 {
-		return fmt.Errorf("invalid RIC instance ID: %d", req.RICRequestID.RICInstanceID)
+	if req.RICrequestID.RICInstanceID < 0 {
+		return fmt.Errorf("invalid RIC instance ID: %d", req.RICrequestID.RICInstanceID)
 	}
 
-	if req.RANFunctionID < 0 {
-		return fmt.Errorf("invalid RAN function ID: %d", req.RANFunctionID)
+	if req.RANfunctionID < 0 {
+		return fmt.Errorf("invalid RAN function ID: %d", req.RANfunctionID)
 	}
 
-	if len(req.RICSubscriptionDetails.RICEventTriggerDefinition) == 0 {
+	if len(req.RICsubscriptionDetails.RICEventTriggerDefinition) == 0 {
 		return fmt.Errorf("RIC event trigger definition is required")
 	}
 
-	if len(req.RICSubscriptionDetails.RICActions) == 0 {
+	if len(req.RICsubscriptionDetails.RICActions) == 0 {
 		return fmt.Errorf("at least one RIC action is required")
 	}
 
 	// Validate each action
-	for i, action := range req.RICSubscriptionDetails.RICActions {
+	for i, action := range req.RICsubscriptionDetails.RICActions {
 		if action.RICActionID < 0 {
 			return fmt.Errorf("invalid RIC action ID at index %d: %d", i, action.RICActionID)
 		}
@@ -463,54 +374,14 @@ func (sm *SubscriptionManager) validateSubscriptionRequest(req *RICSubscriptionR
 }
 
 // getRequestKey generates a unique key for a subscription request
-func (sm *SubscriptionManager) getRequestKey(nodeID string, requestID RICRequestID) string {
+func (sm *SubscriptionManager) getRequestKey(nodeID string, requestID models.RICrequestID) string {
 	return fmt.Sprintf("%s_%d_%d", nodeID, requestID.RICRequestorID, requestID.RICInstanceID)
-}
-
-// sendEvent sends an event to all registered handlers
-func (sm *SubscriptionManager) sendEvent(event SubscriptionEvent) {
-	for _, handler := range sm.eventHandlers {
-		go func(h SubscriptionEventHandler) {
-			switch event.Type {
-			case SubscriptionEventCreated:
-				h.OnSubscriptionCreated(event.Subscription)
-			case SubscriptionEventUpdated:
-				h.OnSubscriptionUpdated(event.Subscription)
-			case SubscriptionEventDeleted:
-				h.OnSubscriptionDeleted(event.Subscription)
-			case SubscriptionEventExpired:
-				h.OnSubscriptionExpired(event.Subscription)
-			case SubscriptionEventError:
-				h.OnSubscriptionError(event.Subscription, event.Error)
-			}
-		}(handler)
-	}
-}
-
-// expirationMonitor monitors subscription expiration
-func (sm *SubscriptionManager) expirationMonitor() {
-	defer sm.wg.Done()
-
-	ticker := time.NewTicker(sm.cleanupInterval)
-	defer ticker.Stop()
-
-	sm.logger.Debug("Starting subscription expiration monitor")
-
-	for {
-		select {
-		case <-sm.ctx.Done():
-			sm.logger.Debug("Subscription expiration monitor stopping")
-			return
-		case <-ticker.C:
-			sm.checkExpiredSubscriptions()
-		}
-	}
 }
 
 // checkExpiredSubscriptions checks for and handles expired subscriptions
 func (sm *SubscriptionManager) checkExpiredSubscriptions() {
 	sm.subscriptionsMutex.RLock()
-	expiredSubscriptions := make([]*RICSubscription, 0)
+	expiredSubscriptions := make([]*models.RICSubscription, 0)
 	
 	for _, subscription := range sm.subscriptions {
 		if subscription.IsExpired() {
@@ -528,7 +399,7 @@ func (sm *SubscriptionManager) checkExpiredSubscriptions() {
 
 		// Update status
 		sm.subscriptionsMutex.Lock()
-		subscription.Status = SubscriptionStatusExpired
+		subscription.Status = models.SubscriptionStatusExpired
 		sm.subscriptionsMutex.Unlock()
 
 		// Send event
@@ -540,23 +411,6 @@ func (sm *SubscriptionManager) checkExpiredSubscriptions() {
 
 		// Clean up expired subscription
 		sm.DeleteSubscription(subscription.SubscriptionID)
-	}
-}
-
-// statisticsCollector periodically collects subscription statistics
-func (sm *SubscriptionManager) statisticsCollector() {
-	defer sm.wg.Done()
-
-	ticker := time.NewTicker(60 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-sm.ctx.Done():
-			return
-		case <-ticker.C:
-			sm.collectStatistics()
-		}
 	}
 }
 
@@ -572,11 +426,11 @@ func (sm *SubscriptionManager) collectStatistics() {
 
 	for _, subscription := range sm.subscriptions {
 		switch subscription.Status {
-		case SubscriptionStatusActive:
+		case models.SubscriptionStatusActive:
 			activeSubscriptions++
-		case SubscriptionStatusPending:
+		case models.SubscriptionStatusPending:
 			pendingSubscriptions++
-		case SubscriptionStatusFailed:
+		case models.SubscriptionStatusFailed:
 			failedSubscriptions++
 		}
 	}
@@ -590,26 +444,4 @@ func (sm *SubscriptionManager) collectStatistics() {
 		"pending_subscriptions": pendingSubscriptions,
 		"failed_subscriptions":  failedSubscriptions,
 	}).Debug("Subscription statistics collected")
-}
-
-// CleanupNodeSubscriptions removes all subscriptions for a disconnected node
-func (sm *SubscriptionManager) CleanupNodeSubscriptions(nodeID string) error {
-	subscriptions := sm.GetSubscriptionsByNode(nodeID)
-	
-	for _, subscription := range subscriptions {
-		if err := sm.DeleteSubscription(subscription.SubscriptionID); err != nil {
-			sm.logger.WithFields(logrus.Fields{
-				"subscription_id": subscription.SubscriptionID,
-				"node_id":        nodeID,
-				"error":          err,
-			}).Error("Failed to cleanup subscription")
-		}
-	}
-
-	sm.logger.WithFields(logrus.Fields{
-		"node_id":              nodeID,
-		"cleaned_subscriptions": len(subscriptions),
-	}).Info("Node subscriptions cleaned up")
-
-	return nil
 }

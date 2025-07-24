@@ -49,7 +49,7 @@ func NewE2NodeManager(config *E2InterfaceConfig) *E2NodeManager {
 	
 	manager := &E2NodeManager{
 		nodes:             make(map[string]*E2Node),
-		logger:            logrus.WithField("component", "e2-node-manager").Logger,
+		logger:            logrus.WithField("component", "e2-node-manager"),
 		ctx:               ctx,
 		cancel:            cancel,
 		heartbeatInterval: config.HeartbeatInterval,

@@ -13,7 +13,7 @@ NC='\033[0m'
 CLUSTER_NAME="near-rt-ric"
 NAMESPACE="oran-nearrt-ric"
 HELM_RELEASE="oran-nearrt-ric"
-KIND_CONFIG="kind-config.yaml"
+KIND_CONFIG="config/kind-config.yaml"
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }

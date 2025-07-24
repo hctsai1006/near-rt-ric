@@ -1,0 +1,313 @@
+package models
+
+import (
+	"encoding/asn1"
+	"sync/atomic"
+	"time"
+)
+
+// ProcedureCode defines the procedure code for E2 messages.
+type ProcedureCode string
+
+const (
+	E2_SETUP_RESPONSE         ProcedureCode = "E2SetupResponse"
+	RIC_SUBSCRIPTION_RESPONSE ProcedureCode = "RICSubscriptionResponse"
+)
+
+// RICactionType defines the type of action for a RIC subscription.
+type RICactionType int
+
+const (
+	Report RICactionType = iota
+)
+
+type E2NodeType string
+
+const (
+	E2NodeTypeGNB       E2NodeType = "gNB"
+	E2NodeTypeUnknown   E2NodeType = "Unknown"
+)
+
+type NodeStatus string
+
+const (
+	NodeStatusConnected       NodeStatus = "Connected"
+	NodeStatusSetupInProgress NodeStatus = "SetupInProgress"
+	NodeStatusOperational     NodeStatus = "Operational"
+	NodeStatusFaulty          NodeStatus = "Faulty"
+)
+
+// GlobalE2NodeID represents the global E2 node ID.
+type GlobalE2NodeID struct {
+	GNB_ID *GNB_ID
+}
+
+// GNB_ID represents the gNB ID.
+type GNB_ID struct {
+	GNB_ID []byte
+}
+
+// RANfunction represents a RAN function.
+type RANfunction struct {
+	RANfunctionID         int
+	RANfunctionDefinition []byte
+	RANfunctionRevision   int
+}
+
+// E2SetupRequest represents an E2 setup request.
+type E2SetupRequest struct {
+	TransactionID  int64
+	GlobalE2NodeID *GlobalE2NodeID
+	RANfunctions   []*RANfunction
+}
+
+// RICrequestID represents a RIC request ID.
+type RICrequestID struct {
+	RICrequestorID int
+	RICinstanceID  int
+}
+
+// RICaction represents a RIC action.
+type RICaction struct {
+	RICactionID   int
+	RICactionType RICactionType
+}
+
+// RICsubscriptionDetails represents the details of a RIC subscription.
+type RICsubscriptionDetails struct {
+	RICeventTriggerDefinition []byte
+	RICactions                []*RICaction
+}
+
+// RICSubscriptionRequest represents a RIC subscription request.
+type RICSubscriptionRequest struct {
+	RICrequestID         *RICrequestID
+	RANfunctionID        int
+	RICsubscriptionDetails *RICsubscriptionDetails
+}
+
+// E2Response is a generic response structure.
+type E2Response struct {
+	ProcedureCode ProcedureCode
+}
+
+// --- Types added to fix compilation ---
+
+type SubscriptionStatus string
+
+const (
+	SubscriptionStatusPending SubscriptionStatus = "Pending"
+	SubscriptionStatusActive  SubscriptionStatus = "Active"
+	SubscriptionStatusFailed  SubscriptionStatus = "Failed"
+	SubscriptionStatusDeleted SubscriptionStatus = "Deleted"
+	SubscriptionStatusExpired SubscriptionStatus = "Expired"
+)
+
+type Cause struct {
+	// Dummy
+}
+
+type CauseType int
+
+const (
+	CauseTypeRICService CauseType = iota
+	CauseTypeE2Node
+	CauseTypeTransport
+	CauseTypeProtocol
+	CauseTypeMisc
+)
+
+type RICActionNotAdmitted struct {
+	RICActionID int64
+	Cause       Cause
+}
+
+// RICSubscription represents a RIC subscription.
+type RICSubscription struct {
+	RequestID            RICrequestID
+	SubscriptionID       string
+	NodeID               string
+	RANFunctionID        int
+	SubscriptionDetails  RICsubscriptionDetails
+	Status               SubscriptionStatus
+	CreatedAt            time.Time
+	LastIndication       time.Time
+	ExpiresAt            *time.Time
+	Actions              []*RICaction
+	AdmittedActions      []int64
+	RejectedActions      []RICActionNotAdmitted
+	ErrorCount           int
+	IndicationsReceived  int
+}
+
+// IsExpired checks if the subscription is expired.
+func (s *RICSubscription) IsExpired() bool {
+	return s.ExpiresAt != nil && time.Now().After(*s.ExpiresAt)
+}
+
+type ConnectionEvent struct {
+	Type         ConnectionEventType
+	ConnectionID string
+	NodeID       string
+	RemoteAddr   string
+	Timestamp    time.Time
+}
+
+type ConnectionEventType int
+
+const (
+	ConnectionEstablished ConnectionEventType = iota
+	ConnectionClosed
+)
+
+type RICcontrolRequest struct {
+	// Dummy
+}
+
+type E2APMessage struct {
+	// Dummy
+}
+
+type E2Node struct {
+	NodeID           string
+	NodeType         string
+	GlobalE2NodeID   *GlobalE2NodeID
+	RemoteAddress    string
+	Status           NodeStatus
+	LastHeartbeat    time.Time
+	LastActivity     time.Time
+	RANFunctions     []*RANfunction
+	ConnectedAt      time.Time
+}
+
+type E2SetupResponse struct {
+	TransactionID        int64
+	GlobalRICID          GlobalRICID
+	RANFunctionsAccepted []RANFunctionAccepted
+}
+
+type GlobalRICID struct {
+	PLMNIdentity []byte
+	RICIdentity  []byte
+}
+
+type RANFunctionAccepted struct {
+	RANFunctionID       int
+	RANFunctionRevision int
+}
+
+type RICSubscriptionResponse struct {
+	RICRequestID         RICrequestID
+	RICActionAdmitted    []RICActionAdmitted
+	RICActionNotAdmitted []RICActionNotAdmitted
+}
+
+type RICActionAdmitted struct {
+	RICActionID int64
+}
+
+type RICIndication struct {
+	RICRequestID         RICrequestID
+	RANFunctionID        int
+	RICActionID          int
+	RICIndicationSN      int
+	RICIndicationType    int
+	RICIndicationMessage []byte
+}
+
+type RICControlFailure struct {
+	// Dummy
+}
+
+type RICControlAck struct {
+	// Dummy
+}
+
+type RICSubscriptionDeleteRequest struct {
+	// Dummy
+}
+
+type E2SetupFailure struct {
+	// Dummy
+}
+
+type E2Message struct {
+	MessageID    string
+	MessageType  E2MessageType
+	NodeID       string
+	ConnectionID string
+	Data         []byte
+}
+
+type E2MessageType int
+
+const (
+	E2SetupRequestMsg E2MessageType = iota
+	E2SetupResponseMsg
+	E2SetupFailureMsg
+	RICSubscriptionRequestMsg
+	RICSubscriptionResponseMsg
+	RICSubscriptionFailureMsg
+	RICSubscriptionDeleteRequestMsg
+	RICSubscriptionDeleteResponseMsg
+	RICIndicationMsg
+	RICControlRequestMsg
+	RICControlAckMsg
+	RICControlFailureMsg
+)
+
+func (m E2MessageType) String() string {
+	return [...]string{"E2SetupRequest", "E2SetupResponse", "E2SetupFailure", "RICSubscriptionRequest", "RICSubscriptionResponse", "RICSubscriptionFailure", "RICSubscriptionDeleteRequest", "RICSubscriptionDeleteResponse", "RICIndication", "RICControlRequest", "RICControlAck", "RICControlFailure"}[m]
+}
+
+type E2AP_PDU struct {
+	InitiatingMessage   *InitiatingMessage
+	SuccessfulOutcome   *SuccessfulOutcome
+	UnsuccessfulOutcome *UnsuccessfulOutcome
+}
+
+type InitiatingMessage struct {
+	Value asn1.RawValue
+}
+
+type SuccessfulOutcome struct {
+	Value asn1.RawValue
+}
+
+type UnsuccessfulOutcome struct {
+	Value asn1.RawValue
+}
+
+// RICSubscriptionFailure represents a RIC subscription failure.
+type RICSubscriptionFailure struct {
+	RICRequestID         RICrequestID
+	RICActionNotAdmitted []RICActionNotAdmitted
+	Cause                Cause
+}
+
+// MessageResult represents the result of processing an E2 message.
+type MessageResult struct {
+	MessageID      string
+	WorkerID       int
+	ProcessingTime time.Duration
+	Response       interface{}
+	Error          error
+	Success        bool
+}
+
+// WorkerPoolStats holds statistics for the worker pool.
+type WorkerPoolStats struct {
+	TotalMessages     atomic.Uint64
+	ProcessedMessages atomic.Uint64
+	FailedMessages    atomic.Uint64
+	QueueSize         atomic.Int32
+	ActiveWorkers     atomic.Int32
+	AverageLatency    atomic.Uint64 // Nanoseconds
+}
+
+// RICSubscriptionDeleteResponse represents a RIC subscription delete response.
+type RICSubscriptionDeleteResponse struct {
+	RICRequestID         RICrequestID
+	RICActionAdmitted    []RICActionAdmitted
+	RICActionNotAdmitted []RICActionNotAdmitted
+}

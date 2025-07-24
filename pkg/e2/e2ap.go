@@ -7,13 +7,12 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
-	"github.com/hctsai1006/near-rt-ric/pkg/e2/node_manager"
 )
 
 // E2APProcessor handles E2AP procedures according to O-RAN specifications
 type E2APProcessor struct {
 	e2Interface  *E2Interface
-	nodeManager  *node_manager.E2NodeManager
+	nodeManager  *E2NodeManager
 	logger       *logrus.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -44,7 +43,7 @@ const (
 )
 
 // NewE2APProcessor creates a new O-RAN compliant E2APProcessor
-func NewE2APProcessor(e2Interface *E2Interface, nodeManager *node_manager.E2NodeManager) *E2APProcessor {
+func NewE2APProcessor(e2Interface *E2Interface, nodeManager *E2NodeManager) *E2APProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	processor := &E2APProcessor{

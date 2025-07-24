@@ -29,7 +29,7 @@ PKG_DIR := ./pkg
 INTERNAL_DIR := ./internal
 FRONTEND_DIR := ./frontend-dashboard
 SCRIPTS_DIR := ./scripts
-CONFIG_DIR := ./configs
+CONFIG_DIR := ./config
 HELM_CHARTS_DIR := ./helm
 K8S_DIR := ./k8s
 

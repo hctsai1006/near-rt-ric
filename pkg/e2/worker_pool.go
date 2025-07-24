@@ -10,6 +10,7 @@ import (
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,8 +23,8 @@ type WorkerPool struct {
 	// Worker management
 	workerCount   int
 	workers       []*Worker
-	messageQueue  chan *E2Message
-	resultChannel chan *MessageResult
+	messageQueue  chan *models.E2Message
+	resultChannel chan *models.MessageResult
 
 	// Message handlers
 	messageHandler MessageHandler
@@ -35,14 +36,14 @@ type WorkerPool struct {
 	running  atomic.Bool
 
 	// Statistics
-	stats *WorkerPoolStats
+	stats *models.WorkerPoolStats
 }
 
 // Worker represents a single worker in the pool
 type Worker struct {
 	id           int
 	pool         *WorkerPool
-	messageQueue chan *E2Message
+	messageQueue chan *models.E2Message
 	logger       *logrus.Entry
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -51,47 +52,18 @@ type Worker struct {
 
 // MessageHandler defines the interface for handling E2 messages
 type MessageHandler interface {
-	HandleE2SetupRequest(connectionID, nodeID string, msg *E2SetupRequest) (*E2SetupResponse, error)
-	HandleE2SetupResponse(connectionID, nodeID string, msg *E2SetupResponse) error
-	HandleE2SetupFailure(connectionID, nodeID string, msg *E2SetupFailure) error
-	HandleRICSubscriptionRequest(connectionID, nodeID string, msg *RICSubscriptionRequest) (*RICSubscriptionResponse, error)
-	HandleRICSubscriptionResponse(connectionID, nodeID string, msg *RICSubscriptionResponse) error
-	HandleRICSubscriptionFailure(connectionID, nodeID string, msg *RICSubscriptionFailure) error
-	HandleRICSubscriptionDeleteRequest(connectionID, nodeID string, msg *RICSubscriptionDeleteRequest) (*RICSubscriptionDeleteResponse, error)
-	HandleRICSubscriptionDeleteResponse(connectionID, nodeID string, msg *RICSubscriptionDeleteResponse) error
-	HandleRICIndication(connectionID, nodeID string, msg *RICIndication) error
-	HandleRICControlRequest(connectionID, nodeID string, msg *RICControlRequest) (*RICControlAck, error)
-	HandleRICControlAck(connectionID, nodeID string, msg *RICControlAck) error
-	HandleRICControlFailure(connectionID, nodeID string, msg *RICControlFailure) error
-}
-
-// MessageResult represents the result of message processing
-type MessageResult struct {
-	MessageID    string
-	Success      bool
-	Error        error
-	Response     interface{}
-	ProcessingTime time.Duration
-	WorkerID     int
-}
-
-// WorkerPoolStats contains statistics for the worker pool
-type WorkerPoolStats struct {
-	TotalMessages     atomic.Uint64
-	ProcessedMessages atomic.Uint64
-	FailedMessages    atomic.Uint64
-	QueueSize         atomic.Int32
-	ActiveWorkers     atomic.Int32
-	AverageLatency    atomic.Uint64 // in nanoseconds
-}
-
-// WorkerPoolConfig contains configuration for the worker pool
-type WorkerPoolConfig struct {
-	WorkerCount       int
-	QueueSize         int
-	MessageTimeout    time.Duration
-	ShutdownTimeout   time.Duration
-	StatsInterval     time.Duration
+	HandleE2SetupRequest(connectionID, nodeID string, msg *models.E2SetupRequest) (*models.E2SetupResponse, error)
+	HandleE2SetupResponse(connectionID, nodeID string, msg *models.E2SetupResponse) error
+	HandleE2SetupFailure(connectionID, nodeID string, msg *models.E2SetupFailure) error
+	HandleRICSubscriptionRequest(connectionID, nodeID string, msg *models.RICSubscriptionRequest) (*models.RICSubscriptionResponse, error)
+	HandleRICSubscriptionResponse(connectionID, nodeID string, msg *models.RICSubscriptionResponse) error
+	HandleRICSubscriptionFailure(connectionID, nodeID string, msg *models.RICSubscriptionFailure) error
+	HandleRICSubscriptionDeleteRequest(connectionID, nodeID string, msg *models.RICSubscriptionDeleteRequest) (*models.RICSubscriptionDeleteResponse, error)
+	HandleRICSubscriptionDeleteResponse(connectionID, nodeID string, msg *models.RICSubscriptionDeleteResponse) error
+	HandleRICIndication(connectionID, nodeID string, msg *models.RICIndication) error
+	HandleRICControlRequest(connectionID, nodeID string, msg *models.RICControlRequest) (*models.RICControlAck, error)
+	HandleRICControlAck(connectionID, nodeID string, msg *models.RICControlAck) error
+	HandleRICControlFailure(connectionID, nodeID string, msg *models.RICControlFailure) error
 }
 
 // NewWorkerPool creates a new worker pool for E2 message processing
@@ -112,105 +84,22 @@ func NewWorkerPool(config *config.E2Config, logger *logrus.Logger, metrics *moni
 
 	pool := &WorkerPool{
 		config:        config,
-		logger:        logger.WithField("component", "worker-pool").Logger,
+				logger:        logger.WithField("component", "worker-pool"),
 		metrics:       metrics,
 		workerCount:   workerCount,
 		workers:       make([]*Worker, workerCount),
-		messageQueue:  make(chan *E2Message, queueSize),
-		resultChannel: make(chan *MessageResult, queueSize),
+		messageQueue:  make(chan *models.E2Message, queueSize),
+		resultChannel: make(chan *models.MessageResult, queueSize),
 		ctx:           ctx,
 		cancel:        cancel,
-		stats:         &WorkerPoolStats{},
+		stats:         &models.WorkerPoolStats{},
 	}
 
 	return pool
 }
 
-// SetMessageHandler sets the message handler for the worker pool
-func (wp *WorkerPool) SetMessageHandler(handler MessageHandler) {
-	wp.messageHandler = handler
-}
-
-// Start starts the worker pool
-func (wp *WorkerPool) Start(ctx context.Context) error {
-	if !wp.running.CompareAndSwap(false, true) {
-		return fmt.Errorf("worker pool is already running")
-	}
-
-	if wp.messageHandler == nil {
-		wp.running.Store(false)
-		return fmt.Errorf("message handler must be set before starting worker pool")
-	}
-
-	wp.logger.WithFields(logrus.Fields{
-		"worker_count": wp.workerCount,
-		"queue_size":   cap(wp.messageQueue),
-	}).Info("Starting E2 worker pool")
-
-	// Start workers
-	for i := 0; i < wp.workerCount; i++ {
-		worker := &Worker{
-			id:           i,
-			pool:         wp,
-			messageQueue: wp.messageQueue,
-			logger:       wp.logger.WithField("worker_id", i),
-			ctx:          wp.ctx,
-		}
-		worker.ctx, worker.cancel = context.WithCancel(wp.ctx)
-		wp.workers[i] = worker
-
-		wp.wg.Add(1)
-		go worker.run()
-	}
-
-	// Start result processor
-	wp.wg.Add(1)
-	go wp.processResults()
-
-	// Start statistics collector
-	wp.wg.Add(1)
-	go wp.statisticsCollector()
-
-	wp.logger.WithField("worker_count", wp.workerCount).Info("E2 worker pool started successfully")
-	return nil
-}
-
-// Stop stops the worker pool gracefully
-func (wp *WorkerPool) Stop(ctx context.Context) error {
-	if !wp.running.CompareAndSwap(true, false) {
-		return nil
-	}
-
-	wp.logger.Info("Stopping E2 worker pool")
-
-	// Close message queue to signal workers to stop accepting new messages
-	close(wp.messageQueue)
-
-	// Cancel context to stop all workers
-	wp.cancel()
-
-	// Wait for workers to finish with timeout
-	done := make(chan struct{})
-	go func() {
-		wp.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		wp.logger.Info("E2 worker pool stopped successfully")
-	case <-ctx.Done():
-		wp.logger.Warn("E2 worker pool shutdown timeout")
-	}
-
-	// Close result channel
-	close(wp.resultChannel)
-
-	return nil
-}
-
 // SubmitMessage submits a message for processing
-func (wp *WorkerPool) SubmitMessage(msg *E2Message) error {
+func (wp *WorkerPool) SubmitMessage(msg *models.E2Message) error {
 	if !wp.running.Load() {
 		return fmt.Errorf("worker pool is not running")
 	}
@@ -233,48 +122,10 @@ func (wp *WorkerPool) SubmitMessage(msg *E2Message) error {
 	}
 }
 
-// GetStats returns current worker pool statistics
-func (wp *WorkerPool) GetStats() *WorkerPoolStats {
-	return wp.stats
-}
-
-// GetQueueSize returns the current size of the message queue
-func (wp *WorkerPool) GetQueueSize() int {
-	return len(wp.messageQueue)
-}
-
-// run executes the worker main loop
-func (w *Worker) run() {
-	defer w.pool.wg.Done()
-	defer w.cancel()
-
-	w.logger.Debug("Worker started")
-	w.pool.stats.ActiveWorkers.Add(1)
-
-	for {
-		select {
-		case <-w.ctx.Done():
-			w.logger.Debug("Worker stopping")
-			w.pool.stats.ActiveWorkers.Add(-1)
-			return
-
-		case msg, ok := <-w.messageQueue:
-			if !ok {
-				w.logger.Debug("Message queue closed, worker stopping")
-				w.pool.stats.ActiveWorkers.Add(-1)
-				return
-			}
-
-			// Process the message
-			w.processMessage(msg)
-		}
-	}
-}
-
 // processMessage processes a single E2 message
-func (w *Worker) processMessage(msg *E2Message) {
+func (w *Worker) processMessage(msg *models.E2Message) {
 	start := time.Now()
-	result := &MessageResult{
+	result := &models.MessageResult{
 		MessageID: msg.MessageID,
 		WorkerID:  w.id,
 	}
@@ -290,29 +141,29 @@ func (w *Worker) processMessage(msg *E2Message) {
 	var err error
 
 	switch msg.MessageType {
-	case E2SetupRequestMsg:
+	case models.E2SetupRequestMsg:
 		response, err = w.handleE2SetupRequest(msg)
-	case E2SetupResponseMsg:
+	case models.E2SetupResponseMsg:
 		err = w.handleE2SetupResponse(msg)
-	case E2SetupFailureMsg:
+	case models.E2SetupFailureMsg:
 		err = w.handleE2SetupFailure(msg)
-	case RICSubscriptionRequestMsg:
+	case models.RICSubscriptionRequestMsg:
 		response, err = w.handleRICSubscriptionRequest(msg)
-	case RICSubscriptionResponseMsg:
+	case models.RICSubscriptionResponseMsg:
 		err = w.handleRICSubscriptionResponse(msg)
-	case RICSubscriptionFailureMsg:
+	case models.RICSubscriptionFailureMsg:
 		err = w.handleRICSubscriptionFailure(msg)
-	case RICSubscriptionDeleteRequestMsg:
+	case models.RICSubscriptionDeleteRequestMsg:
 		response, err = w.handleRICSubscriptionDeleteRequest(msg)
-	case RICSubscriptionDeleteResponseMsg:
+	case models.RICSubscriptionDeleteResponseMsg:
 		err = w.handleRICSubscriptionDeleteResponse(msg)
-	case RICIndicationMsg:
+	case models.RICIndicationMsg:
 		err = w.handleRICIndication(msg)
-	case RICControlRequestMsg:
+	case models.RICControlRequestMsg:
 		response, err = w.handleRICControlRequest(msg)
-	case RICControlAckMsg:
+	case models.RICControlAckMsg:
 		err = w.handleRICControlAck(msg)
-	case RICControlFailureMsg:
+	case models.RICControlFailureMsg:
 		err = w.handleRICControlFailure(msg)
 	default:
 		err = fmt.Errorf("unsupported message type: %s", msg.MessageType.String())
@@ -359,7 +210,7 @@ func (w *Worker) processMessage(msg *E2Message) {
 }
 
 // handleE2SetupRequest handles E2 Setup Request messages
-func (w *Worker) handleE2SetupRequest(msg *E2Message) (interface{}, error) {
+func (w *Worker) handleE2SetupRequest(msg *models.E2Message) (interface{}, error) {
 	// Decode ASN.1 message
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
@@ -371,7 +222,7 @@ func (w *Worker) handleE2SetupRequest(msg *E2Message) (interface{}, error) {
 	}
 
 	// Extract E2SetupRequest from PDU value
-	setupReq, ok := pdu.InitiatingMessage.Value.(*E2SetupRequest)
+	setupReq, ok := pdu.InitiatingMessage.Value.(*models.E2SetupRequest)
 	if !ok {
 		return nil, fmt.Errorf("failed to extract E2SetupRequest from PDU")
 	}
@@ -380,7 +231,7 @@ func (w *Worker) handleE2SetupRequest(msg *E2Message) (interface{}, error) {
 }
 
 // handleE2SetupResponse handles E2 Setup Response messages
-func (w *Worker) handleE2SetupResponse(msg *E2Message) error {
+func (w *Worker) handleE2SetupResponse(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode E2 setup response: %w", err)
@@ -390,7 +241,7 @@ func (w *Worker) handleE2SetupResponse(msg *E2Message) error {
 		return fmt.Errorf("expected successful outcome for E2 setup response")
 	}
 
-	setupResp, ok := pdu.SuccessfulOutcome.Value.(*E2SetupResponse)
+	setupResp, ok := pdu.SuccessfulOutcome.Value.(*models.E2SetupResponse)
 	if !ok {
 		return fmt.Errorf("failed to extract E2SetupResponse from PDU")
 	}
@@ -399,7 +250,7 @@ func (w *Worker) handleE2SetupResponse(msg *E2Message) error {
 }
 
 // handleE2SetupFailure handles E2 Setup Failure messages
-func (w *Worker) handleE2SetupFailure(msg *E2Message) error {
+func (w *Worker) handleE2SetupFailure(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode E2 setup failure: %w", err)
@@ -409,7 +260,7 @@ func (w *Worker) handleE2SetupFailure(msg *E2Message) error {
 		return fmt.Errorf("expected unsuccessful outcome for E2 setup failure")
 	}
 
-	setupFailure, ok := pdu.UnsuccessfulOutcome.Value.(*E2SetupFailure)
+	setupFailure, ok := pdu.UnsuccessfulOutcome.Value.(*models.E2SetupFailure)
 	if !ok {
 		return fmt.Errorf("failed to extract E2SetupFailure from PDU")
 	}
@@ -418,7 +269,7 @@ func (w *Worker) handleE2SetupFailure(msg *E2Message) error {
 }
 
 // handleRICSubscriptionRequest handles RIC Subscription Request messages
-func (w *Worker) handleRICSubscriptionRequest(msg *E2Message) (interface{}, error) {
+func (w *Worker) handleRICSubscriptionRequest(msg *models.E2Message) (interface{}, error) {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode RIC subscription request: %w", err)
@@ -428,7 +279,7 @@ func (w *Worker) handleRICSubscriptionRequest(msg *E2Message) (interface{}, erro
 		return nil, fmt.Errorf("expected initiating message for RIC subscription request")
 	}
 
-	subReq, ok := pdu.InitiatingMessage.Value.(*RICSubscriptionRequest)
+	subReq, ok := pdu.InitiatingMessage.Value.(*models.RICSubscriptionRequest)
 	if !ok {
 		return nil, fmt.Errorf("failed to extract RICSubscriptionRequest from PDU")
 	}
@@ -437,7 +288,7 @@ func (w *Worker) handleRICSubscriptionRequest(msg *E2Message) (interface{}, erro
 }
 
 // handleRICSubscriptionResponse handles RIC Subscription Response messages
-func (w *Worker) handleRICSubscriptionResponse(msg *E2Message) error {
+func (w *Worker) handleRICSubscriptionResponse(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC subscription response: %w", err)
@@ -447,7 +298,7 @@ func (w *Worker) handleRICSubscriptionResponse(msg *E2Message) error {
 		return fmt.Errorf("expected successful outcome for RIC subscription response")
 	}
 
-	subResp, ok := pdu.SuccessfulOutcome.Value.(*RICSubscriptionResponse)
+	subResp, ok := pdu.SuccessfulOutcome.Value.(*models.RICSubscriptionResponse)
 	if !ok {
 		return fmt.Errorf("failed to extract RICSubscriptionResponse from PDU")
 	}
@@ -456,7 +307,7 @@ func (w *Worker) handleRICSubscriptionResponse(msg *E2Message) error {
 }
 
 // handleRICSubscriptionFailure handles RIC Subscription Failure messages
-func (w *Worker) handleRICSubscriptionFailure(msg *E2Message) error {
+func (w *Worker) handleRICSubscriptionFailure(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC subscription failure: %w", err)
@@ -466,7 +317,7 @@ func (w *Worker) handleRICSubscriptionFailure(msg *E2Message) error {
 		return fmt.Errorf("expected unsuccessful outcome for RIC subscription failure")
 	}
 
-	subFailure, ok := pdu.UnsuccessfulOutcome.Value.(*RICSubscriptionFailure)
+	subFailure, ok := pdu.UnsuccessfulOutcome.Value.(*models.RICSubscriptionFailure)
 	if !ok {
 		return fmt.Errorf("failed to extract RICSubscriptionFailure from PDU")
 	}
@@ -475,7 +326,7 @@ func (w *Worker) handleRICSubscriptionFailure(msg *E2Message) error {
 }
 
 // handleRICSubscriptionDeleteRequest handles RIC Subscription Delete Request messages
-func (w *Worker) handleRICSubscriptionDeleteRequest(msg *E2Message) (interface{}, error) {
+func (w *Worker) handleRICSubscriptionDeleteRequest(msg *models.E2Message) (interface{}, error) {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode RIC subscription delete request: %w", err)
@@ -485,7 +336,7 @@ func (w *Worker) handleRICSubscriptionDeleteRequest(msg *E2Message) (interface{}
 		return nil, fmt.Errorf("expected initiating message for RIC subscription delete request")
 	}
 
-	delReq, ok := pdu.InitiatingMessage.Value.(*RICSubscriptionDeleteRequest)
+	delReq, ok := pdu.InitiatingMessage.Value.(*models.RICSubscriptionDeleteRequest)
 	if !ok {
 		return nil, fmt.Errorf("failed to extract RICSubscriptionDeleteRequest from PDU")
 	}
@@ -494,7 +345,7 @@ func (w *Worker) handleRICSubscriptionDeleteRequest(msg *E2Message) (interface{}
 }
 
 // handleRICSubscriptionDeleteResponse handles RIC Subscription Delete Response messages
-func (w *Worker) handleRICSubscriptionDeleteResponse(msg *E2Message) error {
+func (w *Worker) handleRICSubscriptionDeleteResponse(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC subscription delete response: %w", err)
@@ -504,7 +355,7 @@ func (w *Worker) handleRICSubscriptionDeleteResponse(msg *E2Message) error {
 		return fmt.Errorf("expected successful outcome for RIC subscription delete response")
 	}
 
-	delResp, ok := pdu.SuccessfulOutcome.Value.(*RICSubscriptionDeleteResponse)
+	delResp, ok := pdu.SuccessfulOutcome.Value.(*models.RICSubscriptionDeleteResponse)
 	if !ok {
 		return fmt.Errorf("failed to extract RICSubscriptionDeleteResponse from PDU")
 	}
@@ -513,7 +364,7 @@ func (w *Worker) handleRICSubscriptionDeleteResponse(msg *E2Message) error {
 }
 
 // handleRICIndication handles RIC Indication messages
-func (w *Worker) handleRICIndication(msg *E2Message) error {
+func (w *Worker) handleRICIndication(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC indication: %w", err)
@@ -523,7 +374,7 @@ func (w *Worker) handleRICIndication(msg *E2Message) error {
 		return fmt.Errorf("expected initiating message for RIC indication")
 	}
 
-	indication, ok := pdu.InitiatingMessage.Value.(*RICIndication)
+	indication, ok := pdu.InitiatingMessage.Value.(*models.RICIndication)
 	if !ok {
 		return fmt.Errorf("failed to extract RICIndication from PDU")
 	}
@@ -532,7 +383,7 @@ func (w *Worker) handleRICIndication(msg *E2Message) error {
 }
 
 // handleRICControlRequest handles RIC Control Request messages
-func (w *Worker) handleRICControlRequest(msg *E2Message) (interface{}, error) {
+func (w *Worker) handleRICControlRequest(msg *models.E2Message) (interface{}, error) {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode RIC control request: %w", err)
@@ -542,7 +393,7 @@ func (w *Worker) handleRICControlRequest(msg *E2Message) (interface{}, error) {
 		return nil, fmt.Errorf("expected initiating message for RIC control request")
 	}
 
-	controlReq, ok := pdu.InitiatingMessage.Value.(*RICControlRequest)
+	controlReq, ok := pdu.InitiatingMessage.Value.(*models.RICControlRequest)
 	if !ok {
 		return nil, fmt.Errorf("failed to extract RICControlRequest from PDU")
 	}
@@ -551,7 +402,7 @@ func (w *Worker) handleRICControlRequest(msg *E2Message) (interface{}, error) {
 }
 
 // handleRICControlAck handles RIC Control Acknowledge messages
-func (w *Worker) handleRICControlAck(msg *E2Message) error {
+func (w *Worker) handleRICControlAck(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC control ack: %w", err)
@@ -561,7 +412,7 @@ func (w *Worker) handleRICControlAck(msg *E2Message) error {
 		return fmt.Errorf("expected successful outcome for RIC control ack")
 	}
 
-	controlAck, ok := pdu.SuccessfulOutcome.Value.(*RICControlAck)
+	controlAck, ok := pdu.SuccessfulOutcome.Value.(*models.RICControlAck)
 	if !ok {
 		return fmt.Errorf("failed to extract RICControlAck from PDU")
 	}
@@ -570,7 +421,7 @@ func (w *Worker) handleRICControlAck(msg *E2Message) error {
 }
 
 // handleRICControlFailure handles RIC Control Failure messages
-func (w *Worker) handleRICControlFailure(msg *E2Message) error {
+func (w *Worker) handleRICControlFailure(msg *models.E2Message) error {
 	pdu, err := w.pool.messageHandler.(*E2Interface).codec.DecodeE2AP_PDU(msg.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode RIC control failure: %w", err)
@@ -580,7 +431,7 @@ func (w *Worker) handleRICControlFailure(msg *E2Message) error {
 		return fmt.Errorf("expected unsuccessful outcome for RIC control failure")
 	}
 
-	controlFailure, ok := pdu.UnsuccessfulOutcome.Value.(*RICControlFailure)
+	controlFailure, ok := pdu.UnsuccessfulOutcome.Value.(*models.RICControlFailure)
 	if !ok {
 		return fmt.Errorf("failed to extract RICControlFailure from PDU")
 	}
@@ -612,7 +463,7 @@ func (wp *WorkerPool) processResults() {
 }
 
 // processResult processes a single message result
-func (wp *WorkerPool) processResult(result *MessageResult) {
+func (wp *WorkerPool) processResult(result *models.MessageResult) {
 	// Update metrics
 	wp.metrics.E2Metrics.MessageLatencySeconds.WithLabelValues("unknown", "process").Observe(result.ProcessingTime.Seconds())
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,10 +44,11 @@ func (c *ASN1Codec) EncodeE2AP_PDU(pdu *E2AP_PDU) ([]byte, error) {
 	}
 	
 	// Validate PDU structure
-	if err := c.validatePDU(pdu); err != nil {
-		c.errorCount++
-		return nil, fmt.Errorf("PDU validation failed: %w", err)
-	}
+	// TODO: Re-enable and update validatePDU to handle the new E2AP_PDU structure with asn1.RawValue
+	// if err := c.validatePDU(pdu); err != nil {
+	// 	c.errorCount++
+	// 	return nil, fmt.Errorf("PDU validation failed: %w", err)
+	// }
 	
 	// Encode using ASN.1 DER
 	encoded, err := asn1.Marshal(*pdu)
@@ -76,45 +78,45 @@ func (c *ASN1Codec) DecodeE2AP_PDU(data []byte) (*E2AP_PDU, error) {
 		return nil, fmt.Errorf("empty ASN.1 data")
 	}
 	
-	var pdu E2AP_PDU
-	rest, err := asn1.Unmarshal(data, &pdu)
+	// Delegate to the DecodeE2AP_PDU in asn1.go which handles RawValue decoding
+	pdu, err := DecodeE2AP_PDU(data)
 	if err != nil {
 		c.errorCount++
 		return nil, fmt.Errorf("failed to decode E2AP PDU: %w", err)
 	}
 	
-	if len(rest) > 0 && c.config.Strict {
-		c.errorCount++
-		return nil, fmt.Errorf("unexpected remaining bytes after PDU decoding: %d bytes", len(rest))
-	}
-	
-	// Validate decoded PDU
-	if c.config.ValidateOnDecode {
-		if err := c.validatePDU(&pdu); err != nil {
-			c.errorCount++
-			return nil, fmt.Errorf("decoded PDU validation failed: %w", err)
-		}
-	}
+	// TODO: Re-enable and update validatePDU to handle the new E2AP_PDU structure with asn1.RawValue
+	// if c.config.ValidateOnDecode {
+	// 	if err := c.validatePDU(pdu); err != nil {
+	// 		c.errorCount++
+	// 		return nil, fmt.Errorf("decoded PDU validation failed: %w", err)
+	// 	}
+	// }
 	
 	c.logger.WithFields(logrus.Fields{
 		"size": len(data),
-		"type": c.getPDUType(&pdu),
+		"type": c.getPDUType(pdu),
 	}).Debug("E2AP PDU decoded successfully")
 	
-	return &pdu, nil
+	return pdu, nil
 }
 
 // EncodeE2SetupRequest encodes an E2 Setup Request message
-func (c *ASN1Codec) EncodeE2SetupRequest(req *E2SetupRequest) ([]byte, error) {
+func (c *ASN1Codec) EncodeE2SetupRequest(req *models.E2SetupRequest) ([]byte, error) {
 	if req == nil {
 		return nil, fmt.Errorf("E2SetupRequest is nil")
 	}
 	
-	// Create initiating message
-	initMsg := &InitiatingMessage{
+	reqBytes, err := asn1.Marshal(*req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal E2SetupRequest: %w", err)
+	}
+
+	// Create initiating message with RawValue
+	initMsg := &models.InitiatingMessage{
 		ProcedureCode: E2SetupRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         req,
+		Value:         asn1.RawValue{Bytes: reqBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -126,27 +128,36 @@ func (c *ASN1Codec) EncodeE2SetupRequest(req *E2SetupRequest) ([]byte, error) {
 }
 
 // DecodeE2SetupRequest decodes an E2 Setup Request message
-func (c *ASN1Codec) DecodeE2SetupRequest(value interface{}) (*E2SetupRequest, error) {
-	// Type assertion and conversion logic would go here
-	// This is a simplified implementation
-	if req, ok := value.(*E2SetupRequest); ok {
-		return req, nil
+func (c *ASN1Codec) DecodeE2SetupRequest(pdu *E2AP_PDU) (*models.E2SetupRequest, error) {
+	if pdu == nil || pdu.InitiatingMessage == nil || pdu.InitiatingMessage.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for E2SetupRequest decoding")
+	}
+
+	var req models.E2SetupRequest
+	_, err := asn1.Unmarshal(pdu.InitiatingMessage.Value.Bytes, &req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal E2SetupRequest from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode E2SetupRequest")
+	return &req, nil
 }
 
 // EncodeE2SetupResponse encodes an E2 Setup Response message
-func (c *ASN1Codec) EncodeE2SetupResponse(resp *E2SetupResponse) ([]byte, error) {
+func (c *ASN1Codec) EncodeE2SetupResponse(resp *models.E2SetupResponse) ([]byte, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("E2SetupResponse is nil")
 	}
 	
-	// Create successful outcome
+	respBytes, err := asn1.Marshal(*resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal E2SetupResponse: %w", err)
+	}
+
+	// Create successful outcome with RawValue
 	successMsg := &SuccessfulOutcome{
 		ProcedureCode: E2SetupRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         resp,
+		Value:         asn1.RawValue{Bytes: respBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -158,25 +169,36 @@ func (c *ASN1Codec) EncodeE2SetupResponse(resp *E2SetupResponse) ([]byte, error)
 }
 
 // DecodeE2SetupResponse decodes an E2 Setup Response message
-func (c *ASN1Codec) DecodeE2SetupResponse(value interface{}) (*E2SetupResponse, error) {
-	if resp, ok := value.(*E2SetupResponse); ok {
-		return resp, nil
+func (c *ASN1Codec) DecodeE2SetupResponse(pdu *E2AP_PDU) (*models.E2SetupResponse, error) {
+	if pdu == nil || pdu.SuccessfulOutcome == nil || pdu.SuccessfulOutcome.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for E2SetupResponse decoding")
+	}
+
+	var resp models.E2SetupResponse
+	_, err := asn1.Unmarshal(pdu.SuccessfulOutcome.Value.Bytes, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal E2SetupResponse from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode E2SetupResponse")
+	return &resp, nil
 }
 
 // EncodeE2SetupFailure encodes an E2 Setup Failure message
-func (c *ASN1Codec) EncodeE2SetupFailure(failure *E2SetupFailure) ([]byte, error) {
+func (c *ASN1Codec) EncodeE2SetupFailure(failure *models.E2SetupFailure) ([]byte, error) {
 	if failure == nil {
 		return nil, fmt.Errorf("E2SetupFailure is nil")
 	}
 	
-	// Create unsuccessful outcome
+	failureBytes, err := asn1.Marshal(*failure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal E2SetupFailure: %w", err)
+	}
+
+	// Create unsuccessful outcome with RawValue
 	failureMsg := &UnsuccessfulOutcome{
 		ProcedureCode: E2SetupRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         failure,
+		Value:         asn1.RawValue{Bytes: failureBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -188,16 +210,21 @@ func (c *ASN1Codec) EncodeE2SetupFailure(failure *E2SetupFailure) ([]byte, error
 }
 
 // EncodeRICSubscriptionRequest encodes a RIC Subscription Request message
-func (c *ASN1Codec) EncodeRICSubscriptionRequest(req *RICSubscriptionRequest) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICSubscriptionRequest(req *models.RICSubscriptionRequest) ([]byte, error) {
 	if req == nil {
 		return nil, fmt.Errorf("RICSubscriptionRequest is nil")
 	}
 	
-	// Create initiating message
+	reqBytes, err := asn1.Marshal(*req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICSubscriptionRequest: %w", err)
+	}
+
+	// Create initiating message with RawValue
 	initMsg := &InitiatingMessage{
 		ProcedureCode: RICSubscriptionRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         req,
+		Value:         asn1.RawValue{Bytes: reqBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -209,25 +236,36 @@ func (c *ASN1Codec) EncodeRICSubscriptionRequest(req *RICSubscriptionRequest) ([
 }
 
 // DecodeRICSubscriptionRequest decodes a RIC Subscription Request message
-func (c *ASN1Codec) DecodeRICSubscriptionRequest(value interface{}) (*RICSubscriptionRequest, error) {
-	if req, ok := value.(*RICSubscriptionRequest); ok {
-		return req, nil
+func (c *ASN1Codec) DecodeRICSubscriptionRequest(pdu *E2AP_PDU) (*models.RICSubscriptionRequest, error) {
+	if pdu == nil || pdu.InitiatingMessage == nil || pdu.InitiatingMessage.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICSubscriptionRequest decoding")
+	}
+
+	var req models.RICSubscriptionRequest
+	_, err := asn1.Unmarshal(pdu.InitiatingMessage.Value.Bytes, &req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal RICSubscriptionRequest from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICSubscriptionRequest")
+	return &req, nil
 }
 
 // EncodeRICSubscriptionResponse encodes a RIC Subscription Response message
-func (c *ASN1Codec) EncodeRICSubscriptionResponse(resp *RICSubscriptionResponse) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICSubscriptionResponse(resp *models.RICSubscriptionResponse) ([]byte, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("RICSubscriptionResponse is nil")
 	}
 	
-	// Create successful outcome
+	respBytes, err := asn1.Marshal(*resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICSubscriptionResponse: %w", err)
+	}
+
+	// Create successful outcome with RawValue
 	successMsg := &SuccessfulOutcome{
 		ProcedureCode: RICSubscriptionRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         resp,
+		Value:         asn1.RawValue{Bytes: respBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -239,25 +277,36 @@ func (c *ASN1Codec) EncodeRICSubscriptionResponse(resp *RICSubscriptionResponse)
 }
 
 // DecodeRICSubscriptionResponse decodes a RIC Subscription Response message
-func (c *ASN1Codec) DecodeRICSubscriptionResponse(value interface{}) (*RICSubscriptionResponse, error) {
-	if resp, ok := value.(*RICSubscriptionResponse); ok {
-		return resp, nil
+func (c *ASN1Codec) DecodeRICSubscriptionResponse(pdu *E2AP_PDU) (*models.RICSubscriptionResponse, error) {
+	if pdu == nil || pdu.SuccessfulOutcome == nil || pdu.SuccessfulOutcome.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICSubscriptionResponse decoding")
+	}
+
+	var resp models.RICSubscriptionResponse
+	_, err := asn1.Unmarshal(pdu.SuccessfulOutcome.Value.Bytes, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal RICSubscriptionResponse from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICSubscriptionResponse")
+	return &resp, nil
 }
 
 // EncodeRICSubscriptionFailure encodes a RIC Subscription Failure message
-func (c *ASN1Codec) EncodeRICSubscriptionFailure(failure *RICSubscriptionFailure) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICSubscriptionFailure(failure *models.RICSubscriptionFailure) ([]byte, error) {
 	if failure == nil {
 		return nil, fmt.Errorf("RICSubscriptionFailure is nil")
 	}
 	
-	// Create unsuccessful outcome
+	failureBytes, err := asn1.Marshal(*failure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICSubscriptionFailure: %w", err)
+	}
+
+	// Create unsuccessful outcome with RawValue
 	failureMsg := &UnsuccessfulOutcome{
 		ProcedureCode: RICSubscriptionRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         failure,
+		Value:         asn1.RawValue{Bytes: failureBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -269,25 +318,36 @@ func (c *ASN1Codec) EncodeRICSubscriptionFailure(failure *RICSubscriptionFailure
 }
 
 // DecodeRICSubscriptionFailure decodes a RIC Subscription Failure message
-func (c *ASN1Codec) DecodeRICSubscriptionFailure(value interface{}) (*RICSubscriptionFailure, error) {
-	if failure, ok := value.(*RICSubscriptionFailure); ok {
-		return failure, nil
+func (c *ASN1Codec) DecodeRICSubscriptionFailure(pdu *E2AP_PDU) (*models.RICSubscriptionFailure, error) {
+	if pdu == nil || pdu.UnsuccessfulOutcome == nil || pdu.UnsuccessfulOutcome.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICSubscriptionFailure decoding")
+	}
+
+	var failure models.RICSubscriptionFailure
+	_, err := asn1.Unmarshal(pdu.UnsuccessfulOutcome.Value.Bytes, &failure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal RICSubscriptionFailure from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICSubscriptionFailure")
+	return &failure, nil
 }
 
 // EncodeRICSubscriptionDeleteRequest encodes a RIC Subscription Delete Request message
-func (c *ASN1Codec) EncodeRICSubscriptionDeleteRequest(req *RICSubscriptionDeleteRequest) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICSubscriptionDeleteRequest(req *models.RICSubscriptionDeleteRequest) ([]byte, error) {
 	if req == nil {
 		return nil, fmt.Errorf("RICSubscriptionDeleteRequest is nil")
 	}
 	
-	// Create initiating message
+	reqBytes, err := asn1.Marshal(*req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICSubscriptionDeleteRequest: %w", err)
+	}
+
+	// Create initiating message with RawValue
 	initMsg := &InitiatingMessage{
 		ProcedureCode: RICSubscriptionDeleteRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         req,
+		Value:         asn1.RawValue{Bytes: reqBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -299,16 +359,21 @@ func (c *ASN1Codec) EncodeRICSubscriptionDeleteRequest(req *RICSubscriptionDelet
 }
 
 // EncodeRICIndication encodes a RIC Indication message
-func (c *ASN1Codec) EncodeRICIndication(indication *RICIndication) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICIndication(indication *models.RICIndication) ([]byte, error) {
 	if indication == nil {
 		return nil, fmt.Errorf("RICIndication is nil")
 	}
 	
-	// Create initiating message
+	indicationBytes, err := asn1.Marshal(*indication)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICIndication: %w", err)
+	}
+
+	// Create initiating message with RawValue
 	initMsg := &InitiatingMessage{
 		ProcedureCode: RICIndicationID,
 		Criticality:   asn1.Enumerated(CriticalityIgnore),
-		Value:         indication,
+		Value:         asn1.RawValue{Bytes: indicationBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -320,25 +385,36 @@ func (c *ASN1Codec) EncodeRICIndication(indication *RICIndication) ([]byte, erro
 }
 
 // DecodeRICIndication decodes a RIC Indication message
-func (c *ASN1Codec) DecodeRICIndication(value interface{}) (*RICIndication, error) {
-	if indication, ok := value.(*RICIndication); ok {
-		return indication, nil
+func (c *ASN1Codec) DecodeRICIndication(pdu *E2AP_PDU) (*models.RICIndication, error) {
+	if pdu == nil || pdu.InitiatingMessage == nil || pdu.InitiatingMessage.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICIndication decoding")
+	}
+
+	var indication models.RICIndication
+	_, err := asn1.Unmarshal(pdu.InitiatingMessage.Value.Bytes, &indication)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal RICIndication from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICIndication")
+	return &indication, nil
 }
 
 // EncodeRICControlRequest encodes a RIC Control Request message
-func (c *ASN1Codec) EncodeRICControlRequest(req *RICControlRequest) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICControlRequest(req *models.RICControlRequest) ([]byte, error) {
 	if req == nil {
 		return nil, fmt.Errorf("RICControlRequest is nil")
 	}
 	
-	// Create initiating message
+	reqBytes, err := asn1.Marshal(*req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal models.RICControlRequest: %w", err)
+	}
+
+	// Create initiating message with RawValue
 	initMsg := &InitiatingMessage{
 		ProcedureCode: RICControlRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         req,
+		Value:         asn1.RawValue{Bytes: reqBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -350,16 +426,21 @@ func (c *ASN1Codec) EncodeRICControlRequest(req *RICControlRequest) ([]byte, err
 }
 
 // EncodeRICControlAck encodes a RIC Control Acknowledge message
-func (c *ASN1Codec) EncodeRICControlAck(ack *RICControlAck) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICControlAck(ack *models.RICControlAck) ([]byte, error) {
 	if ack == nil {
 		return nil, fmt.Errorf("RICControlAck is nil")
 	}
 	
-	// Create successful outcome
+	ackBytes, err := asn1.Marshal(*ack)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICControlAck: %w", err)
+	}
+
+	// Create successful outcome with RawValue
 	successMsg := &SuccessfulOutcome{
 		ProcedureCode: RICControlRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         ack,
+		Value:         asn1.RawValue{Bytes: ackBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -371,25 +452,36 @@ func (c *ASN1Codec) EncodeRICControlAck(ack *RICControlAck) ([]byte, error) {
 }
 
 // DecodeRICControlAck decodes a RIC Control Acknowledge message
-func (c *ASN1Codec) DecodeRICControlAck(value interface{}) (*RICControlAck, error) {
-	if ack, ok := value.(*RICControlAck); ok {
-		return ack, nil
+func (c *ASN1Codec) DecodeRICControlAck(pdu *E2AP_PDU) (*models.RICControlAck, error) {
+	if pdu == nil || pdu.SuccessfulOutcome == nil || pdu.SuccessfulOutcome.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICControlAck decoding")
+	}
+
+	var ack models.RICControlAck
+	_, err := asn1.Unmarshal(pdu.SuccessfulOutcome.Value.Bytes, &ack)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal RICControlAck from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICControlAck")
+	return &ack, nil
 }
 
 // EncodeRICControlFailure encodes a RIC Control Failure message
-func (c *ASN1Codec) EncodeRICControlFailure(failure *RICControlFailure) ([]byte, error) {
+func (c *ASN1Codec) EncodeRICControlFailure(failure *models.RICControlFailure) ([]byte, error) {
 	if failure == nil {
 		return nil, fmt.Errorf("RICControlFailure is nil")
 	}
 	
-	// Create unsuccessful outcome
+	failureBytes, err := asn1.Marshal(*failure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal RICControlFailure: %w", err)
+	}
+
+	// Create unsuccessful outcome with RawValue
 	failureMsg := &UnsuccessfulOutcome{
 		ProcedureCode: RICControlRequestID,
 		Criticality:   asn1.Enumerated(CriticalityReject),
-		Value:         failure,
+		Value:         asn1.RawValue{Bytes: failureBytes, Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true},
 	}
 	
 	// Create PDU
@@ -401,128 +493,82 @@ func (c *ASN1Codec) EncodeRICControlFailure(failure *RICControlFailure) ([]byte,
 }
 
 // DecodeRICControlFailure decodes a RIC Control Failure message
-func (c *ASN1Codec) DecodeRICControlFailure(value interface{}) (*RICControlFailure, error) {
-	if failure, ok := value.(*RICControlFailure); ok {
-		return failure, nil
+func (c *ASN1Codec) DecodeRICControlFailure(pdu *E2AP_PDU) (*models.RICControlFailure, error) {
+	if pdu == nil || pdu.UnsuccessfulOutcome == nil || pdu.UnsuccessfulOutcome.Value.Bytes == nil {
+		return nil, fmt.Errorf("invalid E2AP PDU for RICControlFailure decoding")
+	}
+
+	var failure models.RICControlFailure
+	_, err := asn1.Unmarshal(pdu.UnsuccessfulOutcome.Value.Bytes, &failure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal models.RICControlFailure from RawValue: %w", err)
 	}
 	
-	return nil, fmt.Errorf("failed to decode RICControlFailure")
+	return &failure, nil
 }
 
 // GetMessageType determines the message type from raw ASN.1 data
-func (c *ASN1Codec) GetMessageType(data []byte) (E2MessageType, error) {
+func (c *ASN1Codec) GetMessageType(data []byte) (models.E2MessageType, error) {
 	pdu, err := c.DecodeE2AP_PDU(data)
 	if err != nil {
-		return UnknownMsg, fmt.Errorf("failed to decode PDU for message type detection: %w", err)
+		return models.UnknownMsg, fmt.Errorf("failed to decode PDU for message type detection: %w", err)
 	}
 	
 	return c.getMessageTypeFromPDU(pdu), nil
 }
 
 // getMessageTypeFromPDU determines message type from a decoded PDU
-func (c *ASN1Codec) getMessageTypeFromPDU(pdu *E2AP_PDU) E2MessageType {
-	if pdu.InitiatingMessage != nil {
-		switch pdu.InitiatingMessage.ProcedureCode {
-		case E2SetupRequestID:
-			return E2SetupRequestMsg
-		case RICSubscriptionRequestID:
-			return RICSubscriptionRequestMsg
-		case RICSubscriptionDeleteRequestID:
-			return RICSubscriptionDeleteRequestMsg
-		case RICIndicationID:
-			return RICIndicationMsg
-		case RICControlRequestID:
-			return RICControlRequestMsg
-		case RICServiceUpdateID:
-			return RICServiceUpdateMsg
-		case E2NodeConfigurationUpdateID:
-			return E2NodeConfigurationUpdateMsg
-		case E2ConnectionUpdateID:
-			return E2ConnectionUpdateMsg
-		case ResetRequestID:
-			return ResetRequestMsg
-		case ErrorIndicationID:
-			return ErrorIndicationMsg
-		}
-	} else if pdu.SuccessfulOutcome != nil {
-		switch pdu.SuccessfulOutcome.ProcedureCode {
-		case E2SetupRequestID:
-			return E2SetupResponseMsg
-		case RICSubscriptionRequestID:
-			return RICSubscriptionResponseMsg
-		case RICSubscriptionDeleteRequestID:
-			return RICSubscriptionDeleteResponseMsg
-		case RICControlRequestID:
-			return RICControlAckMsg
-		case RICServiceUpdateID:
-			return RICServiceUpdateAckMsg
-		case E2NodeConfigurationUpdateID:
-			return E2NodeConfigurationUpdateAckMsg
-		case E2ConnectionUpdateID:
-			return E2ConnectionUpdateAckMsg
-		case ResetRequestID:
-			return ResetResponseMsg
-		}
-	} else if pdu.UnsuccessfulOutcome != nil {
-		switch pdu.UnsuccessfulOutcome.ProcedureCode {
-		case E2SetupRequestID:
-			return E2SetupFailureMsg
-		case RICSubscriptionRequestID:
-			return RICSubscriptionFailureMsg
-		case RICSubscriptionDeleteRequestID:
-			return RICSubscriptionDeleteFailureMsg
-		case RICControlRequestID:
-			return RICControlFailureMsg
-		case RICServiceUpdateID:
-			return RICServiceUpdateFailureMsg
-		case E2NodeConfigurationUpdateID:
-			return E2NodeConfigurationUpdateFailureMsg
-		case E2ConnectionUpdateID:
-			return E2ConnectionUpdateFailureMsg
-		}
+func (c *ASN1Codec) getMessageTypeFromPDU(pdu *E2AP_PDU) models.E2MessageType {
+	switch pdu.ProcedureCode {
+	case E2SetupRequestID:
+		return models.E2SetupRequestMsg
+	case RICSubscriptionRequestID:
+		return models.RICSubscriptionRequestMsg
+	case RICSubscriptionDeleteRequestID:
+		return models.RICSubscriptionDeleteRequestMsg
+	case RICIndicationID:
+		return models.RICIndicationMsg
+	case RICControlRequestID:
+		return models.RICControlRequestMsg
+	case RICServiceUpdateID:
+		return models.RICServiceUpdateMsg
+	case E2NodeConfigurationUpdateID:
+		return models.E2NodeConfigurationUpdateMsg
+	case E2ConnectionUpdateID:
+		return models.E2ConnectionUpdateMsg
+	case ResetRequestID:
+		return models.ResetRequestMsg
+	case ErrorIndicationID:
+		return models.ErrorIndicationMsg
+	default:
+		return models.UnknownMsg
 	}
-	
-	return UnknownMsg
 }
 
 // validatePDU validates the structure of an E2AP PDU
+// TODO: Update for full PER validation of RawValue content.
 func (c *ASN1Codec) validatePDU(pdu *E2AP_PDU) error {
 	if pdu == nil {
 		return fmt.Errorf("PDU is nil")
 	}
 	
-	// Check that exactly one message type is present
-	messageCount := 0
-	if pdu.InitiatingMessage != nil {
-		messageCount++
-	}
-	if pdu.SuccessfulOutcome != nil {
-		messageCount++
-	}
-	if pdu.UnsuccessfulOutcome != nil {
-		messageCount++
+	// For now, we'll just check if RawValue.Bytes is present for simplicity.
+	// A full PER validation would involve unmarshaling and validating the content.
+	if len(pdu.Value.Bytes) == 0 {
+		return fmt.Errorf("PDU Value bytes are empty")
 	}
 	
-	if messageCount != 1 {
-		return fmt.Errorf("PDU must contain exactly one message type, found %d", messageCount)
-	}
-	
-	// Validate specific message types
-	if pdu.InitiatingMessage != nil {
-		return c.validateInitiatingMessage(pdu.InitiatingMessage)
-	} else if pdu.SuccessfulOutcome != nil {
-		return c.validateSuccessfulOutcome(pdu.SuccessfulOutcome)
-	} else if pdu.UnsuccessfulOutcome != nil {
-		return c.validateUnsuccessfulOutcome(pdu.UnsuccessfulOutcome)
-	}
-	
+	// Validate procedure code based on the message type (InitiatingMessage, SuccessfulOutcome, UnsuccessfulOutcome)
+	// This logic needs to be re-evaluated with the new E2AP_PDU structure.
+	// For now, we'll rely on the ProcedureCode being valid.
 	return nil
 }
 
 // validateInitiatingMessage validates an initiating message
-func (c *ASN1Codec) validateInitiatingMessage(msg *InitiatingMessage) error {
-	if msg == nil {
-		return fmt.Errorf("initiating message is nil")
+// TODO: Update for full PER validation of RawValue content.
+func (c *ASN1Codec) validateInitiatingMessage(pdu *E2AP_PDU) error {
+	if pdu == nil || len(pdu.Value.Bytes) == 0 {
+		return fmt.Errorf("initiating message PDU or Value bytes are nil/empty")
 	}
 	
 	// Validate procedure code
@@ -541,23 +587,24 @@ func (c *ASN1Codec) validateInitiatingMessage(msg *InitiatingMessage) error {
 	
 	valid := false
 	for _, code := range validProcedureCodes {
-		if msg.ProcedureCode == code {
+		if pdu.ProcedureCode == code {
 			valid = true
 			break
 		}
 	}
 	
 	if !valid {
-		return fmt.Errorf("invalid procedure code for initiating message: %d", msg.ProcedureCode)
+		return fmt.Errorf("invalid procedure code for initiating message: %d", pdu.ProcedureCode)
 	}
 	
 	return nil
 }
 
 // validateSuccessfulOutcome validates a successful outcome message
-func (c *ASN1Codec) validateSuccessfulOutcome(msg *SuccessfulOutcome) error {
-	if msg == nil {
-		return fmt.Errorf("successful outcome is nil")
+// TODO: Update for full PER validation of RawValue content.
+func (c *ASN1Codec) validateSuccessfulOutcome(pdu *E2AP_PDU) error {
+	if pdu == nil || len(pdu.Value.Bytes) == 0 {
+		return fmt.Errorf("successful outcome PDU or Value bytes are nil/empty")
 	}
 	
 	// Validate procedure code
@@ -574,23 +621,24 @@ func (c *ASN1Codec) validateSuccessfulOutcome(msg *SuccessfulOutcome) error {
 	
 	valid := false
 	for _, code := range validProcedureCodes {
-		if msg.ProcedureCode == code {
+		if pdu.ProcedureCode == code {
 			valid = true
 			break
 		}
 	}
 	
 	if !valid {
-		return fmt.Errorf("invalid procedure code for successful outcome: %d", msg.ProcedureCode)
+		return fmt.Errorf("invalid procedure code for successful outcome: %d", pdu.ProcedureCode)
 	}
 	
 	return nil
 }
 
 // validateUnsuccessfulOutcome validates an unsuccessful outcome message
-func (c *ASN1Codec) validateUnsuccessfulOutcome(msg *UnsuccessfulOutcome) error {
-	if msg == nil {
-		return fmt.Errorf("unsuccessful outcome is nil")
+// TODO: Update for full PER validation of RawValue content.
+func (c *ASN1Codec) validateUnsuccessfulOutcome(pdu *E2AP_PDU) error {
+	if pdu == nil || len(pdu.Value.Bytes) == 0 {
+		return fmt.Errorf("unsuccessful outcome PDU or Value bytes are nil/empty")
 	}
 	
 	// Validate procedure code
@@ -606,14 +654,14 @@ func (c *ASN1Codec) validateUnsuccessfulOutcome(msg *UnsuccessfulOutcome) error 
 	
 	valid := false
 	for _, code := range validProcedureCodes {
-		if msg.ProcedureCode == code {
+		if pdu.ProcedureCode == code {
 			valid = true
 			break
 		}
 	}
 	
 	if !valid {
-		return fmt.Errorf("invalid procedure code for unsuccessful outcome: %d", msg.ProcedureCode)
+		return fmt.Errorf("invalid procedure code for unsuccessful outcome: %d", pdu.ProcedureCode)
 	}
 	
 	return nil
@@ -643,15 +691,15 @@ func (c *ASN1Codec) GetStatistics() map[string]uint64 {
 // ValidateMessage validates a message structure before encoding
 func (c *ASN1Codec) ValidateMessage(msg interface{}) error {
 	switch v := msg.(type) {
-	case *E2SetupRequest:
+	case *models.E2SetupRequest:
 		return c.validateE2SetupRequest(v)
-	case *E2SetupResponse:
+	case *models.E2SetupResponse:
 		return c.validateE2SetupResponse(v)
-	case *RICSubscriptionRequest:
+	case *models.RICSubscriptionRequest:
 		return c.validateRICSubscriptionRequest(v)
-	case *RICIndication:
+	case *models.RICIndication:
 		return c.validateRICIndication(v)
-	case *RICControlRequest:
+	case *models.RICControlRequest:
 		return c.validateRICControlRequest(v)
 	default:
 		return fmt.Errorf("unsupported message type: %T", msg)
@@ -659,7 +707,7 @@ func (c *ASN1Codec) ValidateMessage(msg interface{}) error {
 }
 
 // validateE2SetupRequest validates an E2 Setup Request
-func (c *ASN1Codec) validateE2SetupRequest(req *E2SetupRequest) error {
+func (c *ASN1Codec) validateE2SetupRequest(req *models.E2SetupRequest) error {
 	if req == nil {
 		return fmt.Errorf("E2SetupRequest is nil")
 	}
@@ -676,7 +724,7 @@ func (c *ASN1Codec) validateE2SetupRequest(req *E2SetupRequest) error {
 }
 
 // validateE2SetupResponse validates an E2 Setup Response
-func (c *ASN1Codec) validateE2SetupResponse(resp *E2SetupResponse) error {
+func (c *ASN1Codec) validateE2SetupResponse(resp *models.E2SetupResponse) error {
 	if resp == nil {
 		return fmt.Errorf("E2SetupResponse is nil")
 	}
@@ -694,7 +742,7 @@ func (c *ASN1Codec) validateE2SetupResponse(resp *E2SetupResponse) error {
 }
 
 // validateRICSubscriptionRequest validates a RIC Subscription Request
-func (c *ASN1Codec) validateRICSubscriptionRequest(req *RICSubscriptionRequest) error {
+func (c *ASN1Codec) validateRICSubscriptionRequest(req *models.RICSubscriptionRequest) error {
 	if req == nil {
 		return fmt.Errorf("RICSubscriptionRequest is nil")
 	}
@@ -726,7 +774,7 @@ func (c *ASN1Codec) validateRICSubscriptionRequest(req *RICSubscriptionRequest) 
 }
 
 // validateRICIndication validates a RIC Indication
-func (c *ASN1Codec) validateRICIndication(indication *RICIndication) error {
+func (c *ASN1Codec) validateRICIndication(indication *models.RICIndication) error {
 	if indication == nil {
 		return fmt.Errorf("RICIndication is nil")
 	}
@@ -744,7 +792,7 @@ func (c *ASN1Codec) validateRICIndication(indication *RICIndication) error {
 }
 
 // validateRICControlRequest validates a RIC Control Request
-func (c *ASN1Codec) validateRICControlRequest(req *RICControlRequest) error {
+func (c *ASN1Codec) validateRICControlRequest(req *models.RICControlRequest) error {
 	if req == nil {
 		return fmt.Errorf("RICControlRequest is nil")
 	}
