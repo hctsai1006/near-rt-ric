@@ -7,7 +7,6 @@ import (
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/accounting"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/fault"
-	"github.com/hctsai1006/near-rt-ric/pkg/o1/netconf"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/performance"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/security"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1/yang"
@@ -16,7 +15,7 @@ import (
 
 // O1Server represents the O1 interface server
 type O1Server struct {
-	NetconfServer *netconf.Server
+	NetconfServer *NetconfServer
 	YangManager   *yang.Manager
 	FaultMgr      fault.FaultManager
 	ConfigMgr     config.ConfigurationManager
@@ -40,7 +39,7 @@ func (s *O1Server) StartNetconfServer() error {
 }
 
 // HandleRPCRequest handles a NETCONF RPC request
-func (s *O1Server) HandleRPCRequest(rpc *netconf.RPCRequest) (*netconf.RPCResponse, error) {
+func (s *O1Server) HandleRPCRequest(rpc *NetconfRPC) (*NetconfRPCReply, error) {
 	// In a real implementation, you would parse the payload to determine the RPC type
 	// and call the appropriate handler.
 	// For now, we'll just assume it's a get-config request.
@@ -53,7 +52,7 @@ func (s *O1Server) HandleRPCRequest(rpc *netconf.RPCRequest) (*netconf.RPCRespon
 	// For now, we'll just use a placeholder.
 	configXML, _ := xml.Marshal(config)
 
-	return &netconf.RPCResponse{
+	return &NetconfRPCReply{
 		MessageID: rpc.MessageID,
 		Data:      string(configXML),
 	}, nil

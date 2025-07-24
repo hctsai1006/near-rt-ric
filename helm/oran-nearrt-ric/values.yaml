@@ -120,7 +120,8 @@ redis:
   enabled: true
   auth:
     enabled: true
-    password: "{{ .Values.security.redisPassword | default \"SecureOran2024!\" }}"
+    existingSecret: "redis-secret"
+    existingSecretPasswordKey: "password"
   architecture: standalone
   tls:
     enabled: true
@@ -130,9 +131,9 @@ redis:
 postgresql:
   enabled: true
   auth:
-    postgresPassword: "{{ .Values.security.postgresPassword | default \"SecureOran2024!\" }}"
+    existingSecret: "postgres-secret"
+    existingSecretPasswordKey: "password"
     username: "fl_user"
-    password: "{{ .Values.security.postgresPassword | default \"SecureOran2024!\" }}"
     database: "fl_coordinator"
   tls:
     enabled: true

@@ -5,6 +5,28 @@ import (
 	"time"
 )
 
+// O1Interface defines the operations for the O1 interface
+type O1Interface interface {
+	StartNetconfServer() error
+	HandleRPCRequest(*netconf.RPCRequest) (*netconf.RPCResponse, error)
+	SendNotification(*Notification) error
+	ManageConfiguration(*ConfigOperation) error
+	CollectPerformanceData() error
+}
+
+// Notification represents an O1 notification
+type Notification struct {
+	EventTime time.Time
+	Message   string
+}
+
+// ConfigOperation represents a configuration operation
+type ConfigOperation struct {
+	Type   string
+	Target string
+	Data   string
+}
+
 // O1 Interface Types according to O-RAN O1 specification
 // Based on O-RAN.WG10.O1-Interface.0-v08.00
 
@@ -349,6 +371,13 @@ type EditConfigRequest struct {
 	TestOption    string        `xml:"test-option,omitempty" json:"test_option,omitempty"`
 	ErrorOption   string        `xml:"error-option,omitempty" json:"error_option,omitempty"`
 	Config        string        `xml:"config" json:"config"`
+}
+
+// Filter represents a NETCONF filter for get and get-config operations
+type Filter struct {
+	Type     string `xml:"type,attr,omitempty" json:"type,omitempty"`
+	Subtree  string `xml:",innerxml" json:"subtree,omitempty"`
+	XPath    string `xml:"select,attr,omitempty" json:"xpath,omitempty"`
 }
 
 // Utility methods

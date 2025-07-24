@@ -28,6 +28,7 @@ type AuthConfig struct {
 	TokenExpiry   int
 	Issuer        string
 	Audience      string
+	StrictIPValidation bool
 }
 
 // DatabaseConfig holds database related configuration
@@ -128,6 +129,7 @@ func LoadA1Config() (*A1Config, error) {
 			TokenExpiry:   getEnvAsInt("A1_AUTH_TOKEN_EXPIRY_SEC", 3600),
 			Issuer:        getEnv("A1_AUTH_ISSUER", "near-rt-ric"),
 			Audience:      getEnv("A1_AUTH_AUDIENCE", "a1-interface"),
+			StrictIPValidation: getEnvAsBool("A1_AUTH_STRICT_IP_VALIDATION", false),
 		},
 		Database: DatabaseConfig{
 			URL:      getEnv("A1_DATABASE_URL", "postgres://user:password@localhost:5432/a1db?sslmode=disable"),

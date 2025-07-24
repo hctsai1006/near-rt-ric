@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/node_manager"
 )
 
 // E2APProcessor handles E2AP procedures according to O-RAN specifications
 type E2APProcessor struct {
-	sctpManager  *SCTPManager
-	nodeManager  *E2NodeManager
-	asn1Encoder  *ASN1Encoder
+	e2Interface  *E2Interface
+	nodeManager  *node_manager.E2NodeManager
 	logger       *logrus.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -29,7 +30,7 @@ type Transaction struct {
 	Timeout   time.Duration
 	Context   context.Context
 	Cancel    context.CancelFunc
-	Response  chan *E2APMessage
+	Response  chan *models.E2APMessage
 }
 
 // TransactionType represents the type of E2AP transaction
@@ -43,14 +44,13 @@ const (
 )
 
 // NewE2APProcessor creates a new O-RAN compliant E2APProcessor
-func NewE2APProcessor(sctpManager *SCTPManager, nodeManager *E2NodeManager) *E2APProcessor {
+func NewE2APProcessor(e2Interface *E2Interface, nodeManager *node_manager.E2NodeManager) *E2APProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	processor := &E2APProcessor{
-		sctpManager:  sctpManager,
+		e2Interface:  e2Interface,
 		nodeManager:  nodeManager,
-		asn1Encoder:  NewASN1Encoder(),
-		logger:       logrus.WithField("component", "e2ap-processor").Logger,
+		logger:       logrus.WithField("component", "e2ap-processor"),
 		ctx:          ctx,
 		cancel:       cancel,
 		transactions: make(map[int64]*Transaction),
@@ -64,66 +64,35 @@ func NewE2APProcessor(sctpManager *SCTPManager, nodeManager *E2NodeManager) *E2A
 }
 
 // ProcessE2SetupRequest processes an E2 setup request according to O-RAN E2AP specification
-func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte) error {
+func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, request *models.E2SetupRequest) error {
 	start := time.Now()
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
-		"data_size": len(requestData),
 	}).Info("Processing E2 Setup Request")
 
-	// Decode the E2 Setup Request
-	pdu, err := p.asn1Encoder.DecodeE2AP_PDU(requestData)
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to decode E2 Setup Request PDU")
-		return p.sendE2SetupFailure(nodeID, CauseTypeProtocol, 0) // Abstract syntax error
-	}
-
-	// Validate PDU structure
-	if pdu.InitiatingMessage == nil || pdu.InitiatingMessage.ProcedureCode != E2SetupRequestID {
-		p.logger.Error("Invalid E2 Setup Request PDU structure")
-		return p.sendE2SetupFailure(nodeID, CauseTypeProtocol, 1) // Abstract syntax error
-	}
-
-	// Extract E2 Setup Request parameters (simplified)
-	setupReq := &E2SetupRequest{
-		TransactionID: p.getNextTransactionID(),
-		GlobalE2NodeID: GlobalE2NodeID{
-			GNBNodeID: &GNBID{
-				PLMNIdentity: []byte{0x00, 0xF1, 0x10}, // Example PLMN
-			},
-		},
-		RANFunctions: []RANFunction{
-			{
-				RANFunctionID:         1,
-				RANFunctionDefinition: []byte("E2SM-KPM"), // KPM Service Model
-				RANFunctionRevision:   1,
-			},
-		},
-	}
-
 	// Register the E2 node
-	node := &E2Node{
+	node := &models.E2Node{
 		NodeID:           nodeID,
-		NodeType:         string(E2NodeTypeGNB),
-		GlobalE2NodeID:   setupReq.GlobalE2NodeID,
+		NodeType:         string(models.E2NodeTypeGNB),
+		GlobalE2NodeID:   request.GlobalE2NodeID,
 		RemoteAddress:    "", // Will be set by SCTP manager
-		Status:           NodeStatusSetupInProgress,
+		Status:           models.NodeStatusSetupInProgress,
 		LastHeartbeat:    time.Now(),
 	}
 
 	// Add supported functions
-	node.RANFunctions = setupReq.RANFunctions
+	node.RANFunctions = request.RANFunctions
 
 	p.nodeManager.AddNode(*node)
 
 	// Send E2 Setup Response
-	response := &E2SetupResponse{
-		TransactionID: setupReq.TransactionID,
-		GlobalRICID: GlobalRICID{
+	response := &models.E2SetupResponse{
+		TransactionID: request.TransactionID,
+		GlobalRICID: models.GlobalRICID{
 			PLMNIdentity: []byte{0x00, 0xF1, 0x10},
 			RICIdentity:  []byte{0x00, 0x00, 0x00, 0x01}, // RIC Instance ID
 		},
-		RANFunctionsAccepted: []RANFunctionAccepted{
+		RANFunctionsAccepted: []models.RANFunctionAccepted{
 			{
 				RANFunctionID:       1,
 				RANFunctionRevision: 1,
@@ -131,81 +100,48 @@ func (p *E2APProcessor) ProcessE2SetupRequest(nodeID string, requestData []byte)
 		},
 	}
 
-	responseData, err := p.asn1Encoder.EncodeE2SetupResponse(response)
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to encode E2 Setup Response")
-		return p.sendE2SetupFailure(nodeID, CauseTypeRIC, 1) // RIC resource limit
-	}
-
-	// Send response via SCTP
-	if err := p.sctpManager.SendToNode(nodeID, responseData); err != nil {
+	// Send response via E2 interface
+	if _, err := p.e2Interface.SendE2SetupRequest(nodeID, response); err != nil {
 		p.logger.WithError(err).Error("Failed to send E2 Setup Response")
 		return err
 	}
 
 	// Update node status
-	node.Status = NodeStatusOperational
+	node.Status = models.NodeStatusOperational
 	node.ConnectedAt = time.Now()
 	p.nodeManager.UpdateNode(nodeID, *node)
 
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
 		"duration": time.Since(start),
-		"functions": len(setupReq.RANFunctions),
+		"functions": len(request.RANFunctions),
 	}).Info("E2 Setup Request processed successfully")
 
 	return nil
 }
 
 // ProcessSubscriptionRequest processes a RIC subscription request
-func (p *E2APProcessor) ProcessSubscriptionRequest(nodeID string, requestData []byte) error {
+func (p *E2APProcessor) ProcessSubscriptionRequest(nodeID string, request *models.RICSubscriptionRequest) error {
 	start := time.Now()
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
-		"data_size": len(requestData),
 	}).Info("Processing RIC Subscription Request")
-
-	// Decode the subscription request
-	pdu, err := p.asn1Encoder.DecodeE2AP_PDU(requestData)
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to decode RIC Subscription Request PDU")
-		return p.sendSubscriptionFailure(nodeID, CauseTypeProtocol, 0)
-	}
-
-	// Validate PDU structure
-	if pdu.InitiatingMessage == nil || pdu.InitiatingMessage.ProcedureCode != RICSubscriptionRequestID {
-		p.logger.Error("Invalid RIC Subscription Request PDU structure")
-		return p.sendSubscriptionFailure(nodeID, CauseTypeProtocol, 1)
-	}
-
-	// Extract subscription parameters (simplified)
-	subscription := &RICSubscription{
-		RequestID: RICRequestID{
-			RICRequestorID: 1,
-			RICInstanceID:  1,
-		},
-		RANFunctionID: 1, // E2SM-KPM
-		SubscriptionDetails: RICSubscriptionDetails{
-			RICEventTriggerDefinition: []byte("periodic:1000ms"), // 1 second periodic
-			RICActions: []RICAction{
-				{
-					RICActionID:   1,
-					RICActionType: RICActionTypeReport,
-				},
-			},
-		},
-	}
 
 	// Store subscription (would be in a proper subscription manager)
 	p.logger.WithFields(logrus.Fields{
-		"requestor_id": subscription.RequestID.RICRequestorID,
-		"instance_id":  subscription.RequestID.RICInstanceID,
-		"function_id":  subscription.RANFunctionID,
+		"requestor_id": request.RICrequestID.RICrequestorID,
+		"instance_id":  request.RICrequestID.RICinstanceID,
+		"function_id":  request.RANfunctionID,
 	}).Info("RIC Subscription stored")
 
 	// Create and send subscription response
-	// TODO: Implement actual subscription response encoding
-	p.logger.Info("RIC Subscription Response sent")
+	response := &models.RICSubscriptionResponse{}
+
+	// Send response via E2 interface
+	if _, err := p.e2Interface.CreateSubscription(nodeID, response); err != nil {
+		p.logger.WithError(err).Error("Failed to send RIC Subscription Response")
+		return err
+	}
 
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
@@ -216,25 +152,11 @@ func (p *E2APProcessor) ProcessSubscriptionRequest(nodeID string, requestData []
 }
 
 // ProcessIndication processes a RIC indication message
-func (p *E2APProcessor) ProcessIndication(nodeID string, indicationData []byte) error {
+func (p *E2APProcessor) ProcessIndication(nodeID string, indication *models.RICIndication) error {
 	start := time.Now()
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
-		"data_size": len(indicationData),
 	}).Info("Processing RIC Indication")
-
-	// Decode the indication message
-	pdu, err := p.asn1Encoder.DecodeE2AP_PDU(indicationData)
-	if err != nil {
-		p.logger.WithError(err).Error("Failed to decode RIC Indication PDU")
-		return err
-	}
-
-	// Validate PDU structure
-	if pdu.InitiatingMessage == nil || pdu.InitiatingMessage.ProcedureCode != RICIndicationID {
-		p.logger.Error("Invalid RIC Indication PDU structure")
-		return fmt.Errorf("invalid RIC Indication PDU")
-	}
 
 	// Process indication content (would forward to xApps)
 	p.logger.WithFields(logrus.Fields{
@@ -247,7 +169,7 @@ func (p *E2APProcessor) ProcessIndication(nodeID string, indicationData []byte) 
 
 // Helper methods
 
-func (p *E2APProcessor) sendE2SetupFailure(nodeID string, causeType CauseType, causeValue int32) error {
+func (p *E2APProcessor) sendE2SetupFailure(nodeID string, causeType models.CauseType, causeValue int32) error {
 	// TODO: Implement E2 Setup Failure encoding and sending
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,
@@ -257,7 +179,7 @@ func (p *E2APProcessor) sendE2SetupFailure(nodeID string, causeType CauseType, c
 	return nil
 }
 
-func (p *E2APProcessor) sendSubscriptionFailure(nodeID string, causeType CauseType, causeValue int32) error {
+func (p *E2APProcessor) sendSubscriptionFailure(nodeID string, causeType models.CauseType, causeValue int32) error {
 	// TODO: Implement RIC Subscription Failure encoding and sending
 	p.logger.WithFields(logrus.Fields{
 		"node_id": nodeID,

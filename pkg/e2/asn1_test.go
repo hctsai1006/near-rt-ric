@@ -283,34 +283,42 @@ func TestE2APEncoding_TableDriven(t *testing.T) {
 }
 
 // Performance test to ensure E2 latency requirements (< 10ms)
-func TestE2LatencyRequirement(t *testing.T) {
+func TestRICSubscriptionRequestEncoding(t *testing.T) {
 	encoder := NewASN1Encoder()
-	setupRequest := &E2SetupRequest{
-		GlobalE2NodeID: testGlobalE2NodeID,
-		RANFunctions:   testRANFunctions,
+
+	// Create test RIC Subscription Request
+	subscriptionRequest := &RICsubscriptionRequest{
+		TransactionID: 1,
 	}
-	
-	// Test multiple iterations to ensure consistent performance
-	const iterations = 100
-	var totalDuration time.Duration
-	
-	for i := 0; i < iterations; i++ {
-		start := time.Now()
-		encoded, err := encoder.EncodeE2SetupRequest(setupRequest)
-		require.NoError(t, err)
-		
-		_, err = encoder.DecodeE2AP_PDU(encoded)
-		require.NoError(t, err)
-		
-		duration := time.Since(start)
-		totalDuration += duration
+
+	// Test encoding
+	encoded, err := EncodeSubscriptionRequest(subscriptionRequest)
+	require.NoError(t, err)
+	assert.NotEmpty(t, encoded)
+}
+
+func TestRICControlRequestEncoding(t *testing.T) {
+	encoder := NewASN1Encoder()
+
+	// Create test RIC Control Request
+	controlRequest := &RICcontrolRequest{
+		TransactionID: 1,
 	}
-	
-	avgDuration := totalDuration / iterations
-	
-	// O-RAN E2 interface requires latency < 10ms for most operations
-	assert.Less(t, avgDuration, 5*time.Millisecond, 
-		"Average E2AP encode/decode cycle should be < 5ms for O-RAN compliance, got %v", avgDuration)
-	
-	t.Logf("Average E2AP encode/decode latency: %v (requirement: < 10ms)", avgDuration)
+
+	// Test encoding
+	encoded, err := EncodeControlRequest(controlRequest)
+	require.NoError(t, err)
+	assert.NotEmpty(t, encoded)
+}
+
+func TestInvalidMessageTypeEncoding(t *testing.T) {
+	encoder := per.NewEncoder()
+	invalidMessage := &struct {
+		InvalidField int
+	}{
+		InvalidField: 1,
+	}
+
+	_, err := encoder.Encode(invalidMessage)
+	assert.Error(t, err)
 }

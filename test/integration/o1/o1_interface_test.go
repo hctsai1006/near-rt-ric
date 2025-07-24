@@ -4,24 +4,19 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/ssh"
-	"fmt"
-	"io"
+	"crypto/x509"
+	"encoding/pem"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/o1"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 )
 
 // O1IntegrationTestSuite contains O1 interface integration tests

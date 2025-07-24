@@ -203,7 +203,10 @@ postgresql:
   auth:
     database: near_rt_ric
     username: ric_user
-    password: "ric_secure_pass"
+    existingSecret: "postgresql-secret"
+    secretKeys:
+      adminPasswordKey: "postgres-password"
+      userPasswordKey: "user-password"
   primary:
     persistence:
       enabled: true
@@ -224,7 +227,8 @@ redis:
   architecture: standalone
   auth:
     enabled: true
-    password: "redis_secure_pass"
+    existingSecret: "redis-secret"
+    existingSecretPasswordKey: "redis-password"
   master:
     persistence:
       enabled: true
@@ -269,10 +273,12 @@ influxdb:
   auth:
     admin:
       username: admin
-      password: admin_password
+      existingSecret: "influxdb-secret"
+      passwordKey: "admin-password"
     user:
       username: ric_user
-      password: ric_influx_pass
+      existingSecret: "influxdb-secret"
+      passwordKey: "user-password"
     org: o-ran
     bucket: metrics
   persistence:
@@ -308,7 +314,9 @@ monitoring:
   grafana:
     enabled: true
     admin:
-      password: admin
+      existingSecret: "grafana-secret"
+      userKey: "admin-user"
+      passwordKey: "admin-password"
     persistence:
       enabled: true
       size: 10Gi

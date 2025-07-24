@@ -2,9 +2,11 @@ package a1
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -15,25 +17,22 @@ import (
 
 // AuthService handles JWT authentication for A1 interface
 type AuthService struct {
-	config     *config.A1Config
-	logger     *logrus.Logger
-	privateKey *rsa.PrivateKey
-	publicKey  *rsa.PublicKey
-	
-	// Token management
-	tokenBlacklist map[string]time.Time
-	
-	// RBAC configuration
-	roles       map[string]*Role
-	permissions map[string]*Permission
+	config            *config.A1Config
+	logger            *logrus.Entry
+	privateKey        *rsa.PrivateKey
+	publicKey         *rsa.PublicKey
+	refreshTokenStore map[string]string // Maps refresh token to user ID
+	tokenBlacklist    map[string]time.Time
+	roles             map[string]*Role
+	permissions       map[string]*Permission
 }
 
 // Role represents a user role with associated permissions
 type Role struct {
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Permissions []string     `json:"permissions"`
-	CreatedAt   time.Time    `json:"created_at"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Permission represents a specific permission
@@ -74,15 +73,6 @@ type TokenRequest struct {
 	Scope    string `json:"scope,omitempty"`
 }
 
-// TokenResponse represents a token response
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-}
-
 // RefreshTokenRequest represents a refresh token request
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -91,11 +81,12 @@ type RefreshTokenRequest struct {
 // NewAuthService creates a new authentication service
 func NewAuthService(config *config.A1Config, logger *logrus.Logger) (*AuthService, error) {
 	auth := &AuthService{
-		config:         config,
-		logger:         logger.WithField("component", "a1-auth"),
-		tokenBlacklist: make(map[string]time.Time),
-		roles:          make(map[string]*Role),
-		permissions:    make(map[string]*Permission),
+		config:            config,
+		logger:            logger.WithField("component", "a1-auth"),
+		refreshTokenStore: make(map[string]string),
+		tokenBlacklist:    make(map[string]time.Time),
+		roles:             make(map[string]*Role),
+		permissions:       make(map[string]*Permission),
 	}
 
 	// Initialize RSA keys for JWT signing
@@ -110,32 +101,49 @@ func NewAuthService(config *config.A1Config, logger *logrus.Logger) (*AuthServic
 	return auth, nil
 }
 
-// loadRSAKeys loads or generates RSA keys for JWT signing
+// loadRSAKeys loads RSA keys from environment variables or generates them for testing.
 func (a *AuthService) loadRSAKeys() error {
-	// In production, these would be loaded from secure key management
-	// For now, generate keys or use configuration
-	
-	if a.config.Auth.PrivateKeyPath != "" {
-		// Load from file in production
-		a.logger.Info("Loading RSA keys from configuration")
-		// Implementation would load actual keys
+	privateKey, err := a.loadPrivateKey()
+	if err != nil {
+		a.logger.WithError(err).Warn("Could not load private key from environment")
+		// Fallback for testing or development environments
+		a.logger.Info("Generating in-memory RSA key pair for development")
+		privateKey, publicKey, genErr := generateTestKeys()
+		if genErr != nil {
+			return fmt.Errorf("failed to generate test keys: %w", genErr)
+		}
+		a.privateKey = privateKey
+		a.publicKey = publicKey
+		return nil
 	}
 
-	// For development, generate keys
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(testPrivateKey))
+	publicKey, err := a.loadPublicKey()
 	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	publicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(testPublicKey))
-	if err != nil {
-		return fmt.Errorf("failed to parse public key: %w", err)
+		return fmt.Errorf("could not load public key: %w", err)
 	}
 
 	a.privateKey = privateKey
 	a.publicKey = publicKey
-
+	a.logger.Info("Successfully loaded RSA keys from environment variables")
 	return nil
+}
+
+// loadPrivateKey loads the RSA private key from an environment variable.
+func (a *AuthService) loadPrivateKey() (*rsa.PrivateKey, error) {
+	keyData := os.Getenv("JWT_PRIVATE_KEY")
+	if keyData == "" {
+		return nil, fmt.Errorf("JWT_PRIVATE_KEY not configured")
+	}
+	return jwt.ParseRSAPrivateKeyFromPEM([]byte(keyData))
+}
+
+// loadPublicKey loads the RSA public key from an environment variable.
+func (a *AuthService) loadPublicKey() (*rsa.PublicKey, error) {
+	keyData := os.Getenv("JWT_PUBLIC_KEY")
+	if keyData == "" {
+		return nil, fmt.Errorf("JWT_PUBLIC_KEY not configured")
+	}
+	return jwt.ParseRSAPublicKeyFromPEM([]byte(keyData))
 }
 
 // initializeDefaultRBAC sets up default roles and permissions
@@ -225,18 +233,23 @@ func (a *AuthService) GenerateToken(userID, username, email string, roles []stri
 
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	
+
 	// Sign token
 	tokenString, err := token.SignedString(a.privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign token: %w", err)
 	}
 
+	// Generate and store refresh token
+	refreshToken := fmt.Sprintf("refresh-%s-%d", userID, now.UnixNano())
+	a.refreshTokenStore[refreshToken] = userID
+
 	response := &TokenResponse{
-		AccessToken: tokenString,
-		TokenType:   "Bearer",
-		ExpiresIn:   int64(a.config.Auth.TokenExpiry),
-		Scope:       strings.Join(permissions, " "),
+		AccessToken:  tokenString,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int64(a.config.Auth.TokenExpiry),
+		Scope:        strings.Join(permissions, " "),
 	}
 
 	a.logger.WithFields(logrus.Fields{
@@ -250,6 +263,27 @@ func (a *AuthService) GenerateToken(userID, username, email string, roles []stri
 	return response, nil
 }
 
+// RefreshToken validates a refresh token and issues a new token pair
+func (a *AuthService) RefreshToken(refreshToken string) (*TokenResponse, error) {
+	userID, ok := a.refreshTokenStore[refreshToken]
+	if !ok {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
+
+	// In a real implementation, you would look up the user by userID
+	// For this example, we'll just re-use the userID
+	// In a real implementation, you would also check if the user is still valid/active
+	// and has the same roles/permissions.
+
+	// Invalidate the old refresh token
+	delete(a.refreshTokenStore, refreshToken)
+
+	// Generate a new token pair
+	// In a real implementation, you would fetch the user's details from a database
+	// For this example, we'll use placeholder values for username and email.
+	return a.GenerateToken(userID, "refreshed_user", "refreshed_user@example.com", []string{"operator"})
+}
+
 // ValidateToken validates a JWT token and returns user claims
 func (a *AuthService) ValidateToken(tokenString string) (*UserClaims, error) {
 	// Check if token is blacklisted
@@ -261,10 +295,14 @@ func (a *AuthService) ValidateToken(tokenString string) (*UserClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// Verify signing method
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			// This check is critical to prevent the "alg:none" vulnerability
+			if token.Header["alg"] == "none" {
+				return nil, fmt.Errorf("unsupported signing method: none")
+			}
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return a.publicKey, nil
-	})
+	}, jwt.WithStrictDecoding()) // Ensure strict decoding
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
@@ -320,7 +358,7 @@ func (a *AuthService) RevokeToken(tokenString string) error {
 // resolvePermissions resolves permissions from a list of roles
 func (a *AuthService) resolvePermissions(roles []string) []string {
 	permissionSet := make(map[string]bool)
-	
+
 	for _, roleName := range roles {
 		if role, exists := a.roles[roleName]; exists {
 			for _, permission := range role.Permissions {
@@ -366,7 +404,7 @@ func (a *AuthService) AuthMiddleware() func(http.Handler) http.Handler {
 			}
 
 			tokenString := authHeader[len(bearerPrefix):]
-			
+
 			// Validate token
 			claims, err := a.ValidateToken(tokenString)
 			if err != nil {
@@ -409,7 +447,7 @@ func (a *AuthService) RequirePermission(permission string) func(http.Handler) ht
 					"required_permission": permission,
 					"user_permissions":   user.Permissions,
 				}).Warn("Access denied - insufficient permissions")
-				
+
 				a.writeAuthError(w, http.StatusForbidden, "Insufficient permissions")
 				return
 			}
@@ -423,16 +461,16 @@ func (a *AuthService) RequirePermission(permission string) func(http.Handler) ht
 func (a *AuthService) writeAuthError(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	errorResp := A1ErrorResponse{
 		Type:   "https://tools.ietf.org/html/rfc7235#section-3.1",
 		Title:  "Authentication Error",
 		Status: statusCode,
 		Detail: message,
 	}
-	
+
 	// In a real implementation, you'd use a JSON encoder
-	fmt.Fprintf(w, `{"type":"%s","title":"%s","status":%d,"detail":"%s"}`, 
+	fmt.Fprintf(w, `{"type":"%s","title":"%s","status":%d,"detail":"%s"}`,
 		errorResp.Type, errorResp.Title, errorResp.Status, errorResp.Detail)
 }
 
@@ -446,46 +484,25 @@ func GetUserFromContext(ctx context.Context) (*AuthenticatedUser, bool) {
 func (a *AuthService) CleanupExpiredTokens() {
 	now := time.Now()
 	count := 0
-	
+
 	for token, expiry := range a.tokenBlacklist {
 		if now.After(expiry) {
 			delete(a.tokenBlacklist, token)
 			count++
 		}
 	}
-	
+
 	if count > 0 {
 		a.logger.WithField("cleaned_tokens", count).Debug("Cleaned up expired blacklisted tokens")
 	}
 }
 
-// Test RSA keys for development (in production, use proper key management)
-const testPrivateKey = `-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEA2Z3QX0BTLS5LpW5Yez3Wz8eLZe4BtNrFw8OmEGPsRhvKp5n8
-BxzKoGwBmEY8S3K4w2mW5oFJH8F0vY9vN3C8H3+Qb6Q9D4I4j7U9I8L8W9O3P5R0
-Z8E5X3F2K8G4S1M9I5H6W2Q4L7F8R3G9E0J5H8P2Y4D6S1F9O8E3Q2K4W7L0R5G8
-P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8
-E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5
-G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9
-O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0
-wIDAQABAoIBAQCZ1VYF3q5N2mH8S3K4w2mW5oFJH8F0vY9vN3C8H3+Qb6Q9D4I4
-j7U9I8L8W9O3P5R0Z8E5X3F2K8G4S1M9I5H6W2Q4L7F8R3G9E0J5H8P2Y4D6S1F9
-O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0
-R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1
-F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7
-L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6
-S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4
-W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4
-D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2
------END RSA PRIVATE KEY-----`
-
-const testPublicKey = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2Z3QX0BTLS5LpW5Yez3W
-z8eLZe4BtNrFw8OmEGPsRhvKp5n8BxzKoGwBmEY8S3K4w2mW5oFJH8F0vY9vN3C8
-H3+Qb6Q9D4I4j7U9I8L8W9O3P5R0Z8E5X3F2K8G4S1M9I5H6W2Q4L7F8R3G9E0J5
-H8P2Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9
-O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0
-R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1
-F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7L0R5G8P3Y4D6S1F9O8E3Q2K4W7
-L0wIDAQAB
------END PUBLIC KEY-----`
+// generateTestKeys generates a new RSA key pair for testing purposes.
+// This should not be used in production.
+func generateTestKeys() (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+	return privateKey, &privateKey.PublicKey, nil
+}

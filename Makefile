@@ -116,7 +116,7 @@ export BUILD_TIME
 export GIT_COMMIT
 
 # Default target
-all: clean tools security-scan test build ## Run complete build pipeline
+all: clean tools security-scan test-coverage build-all ## Run complete build pipeline
 
 ## Help
 help: ## Show this comprehensive help message
@@ -192,6 +192,15 @@ vuln-check: ## Check for vulnerabilities
 	@echo "$(YELLOW)🛡️ Checking for vulnerabilities...$(NC)"
 	@govulncheck ./...
 	@echo "$(GREEN)✓ Vulnerability check completed$(NC)"
+
+security-scan: ## Run comprehensive security scan
+	@echo "$(YELLOW)🔒 Running security scan...$(NC)"
+	@echo "$(CYAN)  Scanning for hardcoded credentials...$(NC)"
+	@! grep -r "password.*=" --include="*.go" --include="*.yaml" --include="*.yml" . | grep -v "PASSWORD.*FILE" | grep -v "_FILE" || (echo "$(RED)❌ Hardcoded credentials found$(NC)"; exit 1)
+	@echo "$(GREEN)✓ No hardcoded credentials found$(NC)"
+	@echo "$(CYAN)  Running Trivy vulnerability scan...$(NC)"
+	@$(TRIVY_CMD) fs --security-checks vuln,config --format table --exit-code 0 .
+	@echo "$(GREEN)✓ Security scan completed$(NC)"
 
 ##@ 🏗️ Build Targets
 build-all: build-backend build-frontend ## Build all components
@@ -315,6 +324,26 @@ undeploy: ## Remove all deployments
 	@$(KUBECTL_CMD) delete namespace $(OBSERVABILITY_NAMESPACE) || true
 
 ##@ Testing & Validation
+test: test-coverage
+	@echo "Running tests with coverage enforcement..."
+
+test-coverage:
+	@echo "Generating coverage report..."
+	go test -coverprofile=coverage.out -covermode=count ./...
+	@coverage=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | sed 's/%//'); \
+	if [ "${coverage%.*}" -lt 80 ]; then \
+		echo "❌ Coverage ${coverage}% is below required 80%"; \
+		go tool cover -func=coverage.out | grep -v "100.0%"; \
+		exit 1; \
+	else \
+		echo "✅ Coverage ${coverage}% meets threshold"; \
+	fi
+
+
+coverage-html:
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
 e2e: ## Run end-to-end tests
 	@echo "$(YELLOW)Running end-to-end tests...$(NC)"
 	@$(MAKE) test-interfaces
