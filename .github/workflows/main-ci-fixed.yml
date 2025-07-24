@@ -153,7 +153,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./xAPP_dashboard-master
+        working-directory: ./frontend-dashboard
         
     steps:
     - name: Checkout code
@@ -164,7 +164,7 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
-        cache-dependency-path: xAPP_dashboard-master/package.json
+        cache-dependency-path: frontend-dashboard/package.json
 
     - name: Install dependencies
       run: npm ci || npm install

@@ -67,7 +67,7 @@ type CertificateInfo struct {
 func NewMTLSManager(config *MTLSConfig, baseLogger *logrus.Logger) (*MTLSManager, error) {
 	manager := &MTLSManager{
 		config: config,
-		logger: baseLogger.WithField("component", "mtls-manager"),
+		logger: baseLogger,
 	}
 	
 	// Set secure defaults
