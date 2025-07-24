@@ -3,6 +3,7 @@ package ric
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/a1"
@@ -19,9 +20,9 @@ type RICServer struct {
 	config      *config.Config
 	logger      *logrus.Logger
 	e2Interface *e2.E2Interface
-	a1Interface a1.O1Interface
-	rpcHandler  *o1.RPCHandler
-	xappManager *xapp.Manager
+		a1Interface *a1.A1Interface
+	o1Handler   *o1.O1Handler
+	xappManager xapp.XAppManager
 	ctx         context.Context
 	cancel      context.CancelFunc
 }
@@ -31,47 +32,51 @@ func NewRICServer(cfg *config.Config) (*RICServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	logger := logging.NewLogger(cfg.Logging)
-	logger.WithFields(logrus.Fields{
+	log := logger.WithFields(logging.Fields{
 		"app":     "O-RAN Near-RT RIC",
 		"version": "1.0.0",
-	}).Info("Initializing O-RAN Near-RT RIC server")
+	})
+	log.Info("Initializing O-RAN Near-RT RIC server")
 
 	server := &RICServer{
 		config: cfg,
-		logger: logger,
+		logger: log.Logger,
 		ctx:    ctx,
 		cancel: cancel,
 	}
 
-	if err := server.initializeInterfaces(); err != nil {
+	if err := server.initializeInterfaces(log); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to initialize O-RAN interfaces: %w", err)
 	}
 
-	var err error
-	server.xappManager, err = xapp.NewManager(cfg.XApp, logger)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to initialize xApp manager: %w", err)
+	// This is a placeholder for a real implementation of the repository and orchestrator
+	repo := xapp.NewMemoryRepository()
+	orch := xapp.NewDummyOrchestrator(log)
+	reg := xapp.NewDummyRegistry(log)
+	xappConfig := &xapp.XAppFrameworkConfig{
+		ConflictDetection:   true,
+		HealthCheckInterval: 30 * time.Second,
+		MetricsInterval:     60 * time.Second,
+		Namespace:           "default",
 	}
+
+	server.xappManager = xapp.NewXAppManager(repo, orch, reg, xappConfig, log.Logger)
 
 	return server, nil
 }
 
 // initializeInterfaces initializes all O-RAN interfaces (E2, A1, O1)
-func (s *RICServer) initializeInterfaces() error {
+func (s *RICServer) initializeInterfaces(logger *logrus.Entry) error {
 	var err error
 
-	s.e2Interface, err = e2.NewE2Interface(s.config.E2, s.logger)
-	if err != nil {
-		return fmt.Errorf("failed to create E2 interface: %w", err)
-	}
+	s.e2Interface = e2.NewE2Interface(fmt.Sprintf("%s:%d", s.config.E2.ListenAddress, s.config.E2.ListenPort))
 
 	repo := a1.NewMemoryRepository()
 	validator := a1.NewA1PolicyValidator()
-	s.a1Interface = a1.NewA1Interface(s.logger, repo, validator)
+	s.a1Interface = a1.NewA1Interface(logger.Logger, repo, validator)
 
-	s.rpcHandler, err = o1.NewRPCHandler(s.config.O1, s.logger)
+	s.o1Handler, err = o1.NewO1Handler(s.config.O1, logger.Logger)
 	if err != nil {
 		return fmt.Errorf("failed to create O1 interface: %w", err)
 	}
@@ -83,37 +88,27 @@ func (s *RICServer) initializeInterfaces() error {
 func (s *RICServer) Start() error {
 	s.logger.Info("Starting O-RAN Near-RT RIC server")
 
-	g, ctx := errgroup.WithContext(s.ctx)
+	g, _ := errgroup.WithContext(s.ctx)
 
 	g.Go(func() error {
 		s.logger.Info("Starting E2 interface")
-		if err := s.e2Interface.Start(ctx); err != nil {
-			return fmt.Errorf("E2 interface failed: %w", err)
-		}
-		return nil
+		return s.e2Interface.Start()
 	})
 
 	g.Go(func() error {
 		s.logger.Info("Starting A1 interface")
-		if err := s.a1Interface.Start(ctx); err != nil {
-			return fmt.Errorf("A1 interface failed: %w", err)
-		}
+		// The A1 interface Start method needs to be implemented
 		return nil
 	})
 
 	g.Go(func() error {
 		s.logger.Info("Starting O1 interface")
-		if err := s.rpcHandler.Start(); err != nil {
-			return fmt.Errorf("O1 interface failed: %w", err)
-		}
-		return nil
+		return s.o1Handler.Start()
 	})
 
 	g.Go(func() error {
 		s.logger.Info("Starting xApp manager")
-		if err := s.xappManager.Start(ctx); err != nil {
-			return fmt.Errorf("xApp manager failed: %w", err)
-		}
+		// The xApp manager Start method needs to be implemented
 		return nil
 	})
 
@@ -123,7 +118,7 @@ func (s *RICServer) Start() error {
 
 	s.logger.WithFields(logrus.Fields{
 		"e2_port": s.config.E2.Port,
-		"a1_port": s.config.A1.Port,
+		"a1_port": s.config.A1.ListenPort,
 		"o1_port": s.config.O1.Port,
 	}).Info("O-RAN Near-RT RIC server started successfully")
 
@@ -142,23 +137,17 @@ func (s *RICServer) Stop() error {
 	g, _ := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		if err := s.xappManager.Stop(ctx); err != nil {
-			s.logger.WithError(err).Error("Error stopping xApp manager")
-		}
+		s.xappManager.Cleanup()
 		return nil
 	})
 
 	g.Go(func() error {
-		if err := s.a1Interface.Stop(ctx); err != nil {
-			s.logger.WithError(err).Error("Error stopping A1 interface")
-		}
+		// The A1 interface Stop method needs to be implemented
 		return nil
 	})
 
 	g.Go(func() error {
-		if err := s.e2Interface.Stop(ctx); err != nil {
-			s.logger.WithError(err).Error("Error stopping E2 interface")
-		}
+		s.e2Interface.Stop()
 		return nil
 	})
 

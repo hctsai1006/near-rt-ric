@@ -8,6 +8,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Config is the root configuration struct, aggregating all component configurations.
+type Config struct {
+	Logging *LoggingConfig
+	XApp    *XAppConfig
+	A1      *A1Config
+	E2      *E2Config
+	O1      *O1Config
+}
+
 // LoggingConfig holds all configuration for logging
 type LoggingConfig struct {
 	Level      string
@@ -232,6 +241,42 @@ type TLSConfig struct {
 	Enabled  bool
 	CertFile string
 	KeyFile  string
+}
+
+// LoadConfig loads all configurations from environment variables.
+func LoadConfig() (*Config, error) {
+	loggingConfig, err := LoadLoggingConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	xappConfig, err := LoadXAppConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	a1Config, err := LoadA1Config()
+	if err != nil {
+		return nil, err
+	}
+
+	e2Config, err := LoadE2Config()
+	if err != nil {
+		return nil, err
+	}
+
+	o1Config, err := LoadO1Config()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Config{
+		Logging: loggingConfig,
+		XApp:    xappConfig,
+		A1:      a1Config,
+		E2:      e2Config,
+		O1:      o1Config,
+	}, nil
 }
 
 // LoadLoggingConfig loads logging configuration from environment variables

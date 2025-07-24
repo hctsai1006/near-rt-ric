@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
 )
@@ -74,7 +73,7 @@ func NewLifecycleManager(logger *logrus.Logger, metrics *monitoring.MetricsColle
 	ctx, cancel := context.WithCancel(context.Background())
 
 	lm := &LifecycleManager{
-		logger:              logger.WithField("component", "xapp-lifecycle"),
+		logger:              logger,
 		metrics:             metrics,
 		xapps:               make(map[XAppID]*XApp),
 		instances:           make(map[XAppInstanceID]*XAppInstance),
@@ -617,7 +616,7 @@ func (lm *LifecycleManager) updateInstanceError(instanceID XAppInstanceID, error
 }
 
 func (lm *LifecycleManager) sendEvent(eventType string, xappID XAppID, instanceID XAppInstanceID, message string, details map[string]interface{}) {
-	event := &XAppEvent{
+	_ = &XAppEvent{
 		EventID:    uuid.New().String(),
 		EventType:  eventType,
 		XAppID:     xappID,

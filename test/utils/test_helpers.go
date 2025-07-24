@@ -22,7 +22,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/hctsai1006/near-rt-ric/pkg/a1"
-	"github.com/hctsai1006/near-rt-ric/pkg/e2"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
 	"github.com/hctsai1006/near-rt-ric/pkg/xapp"
 )
 
@@ -282,80 +282,58 @@ func CopyTestFile(t *testing.T, src, dst string) {
 // E2TestMessage builders for common E2 messages
 
 // CreateE2SetupRequest creates a test E2 Setup Request
-func CreateE2SetupRequest(nodeID string, transactionID uint32) *e2.E2SetupRequest {
-	return &e2.E2SetupRequest{
+func CreateE2SetupRequest(nodeID string, transactionID int64) *models.E2SetupRequest {
+	return &models.E2SetupRequest{
 		TransactionID: transactionID,
-		GlobalE2NodeID: e2.GlobalE2NodeID{
-			NodeType: e2.NodeTypeGNB,
-			NodeID:   nodeID,
-		},
-		RANFunctions: []e2.RANFunction{
-			{
-				FunctionID:  1,
-				Name:        "RAN Control",
-				Version:     "1.0",
-				OID:         "1.3.6.1.4.1.1.22.1.1",
-				Description: "Test RAN Control Function",
+		GlobalE2NodeID: &models.GlobalE2NodeID{
+			GNB_ID: &models.GNB_ID{
+				GNB_ID: []byte(nodeID),
 			},
+		},
+		RANfunctions: []*models.RANfunction{
 			{
-				FunctionID:  2,
-				Name:        "Key Performance Measurement",
-				Version:     "1.0",
-				OID:         "1.3.6.1.4.1.1.22.1.2",
-				Description: "Test KPM Function",
+				RANfunctionID:         1,
+				RANfunctionDefinition: []byte("test"),
+				RANfunctionRevision:   1,
 			},
 		},
 	}
 }
 
 // CreateRICSubscriptionRequest creates a test RIC Subscription Request
-func CreateRICSubscriptionRequest(requestorID, instanceID, transactionID uint32, ranFunctionID uint32) *e2.RICSubscriptionRequest {
-	return &e2.RICSubscriptionRequest{
-		TransactionID: transactionID,
-		RequestID: e2.RICRequestID{
-			RequestorID: requestorID,
-			InstanceID:  instanceID,
+func CreateRICSubscriptionRequest(requestorID, instanceID, ranFunctionID int) *models.RICSubscriptionRequest {
+	return &models.RICSubscriptionRequest{
+		RICrequestID: &models.RICrequestID{
+			RICrequestorID: requestorID,
+			RICinstanceID:  instanceID,
 		},
-		RANFunctionID: ranFunctionID,
-		EventTriggers: e2.EventTriggerDefinition{
-			TriggerType: e2.TriggerTypePeriodic,
-			Period:      1000, // 1 second
-		},
-		Actions: []e2.RICAction{
-			{
-				ActionID:   1,
-				ActionType: e2.ActionTypeReport,
+		RANfunctionID: ranFunctionID,
+		RICsubscriptionDetails: &models.RICsubscriptionDetails{
+			RICeventTriggerDefinition: []byte("test"),
+			RICactions: []*models.RICaction{
+				{
+					RICactionID:   1,
+					RICactionType: models.Report,
+				},
 			},
 		},
 	}
 }
 
 // CreateRICControlRequest creates a test RIC Control Request
-func CreateRICControlRequest(requestorID, instanceID, transactionID uint32, ranFunctionID uint32) *e2.RICControlRequest {
-	return &e2.RICControlRequest{
-		TransactionID: transactionID,
-		RequestID: e2.RICRequestID{
-			RequestorID: requestorID,
-			InstanceID:  instanceID,
-		},
-		RANFunctionID:     ranFunctionID,
-		CallProcessID:     []byte("test-control-001"),
-		ControlHeader:     []byte("test-control-header"),
-		ControlMessage:    []byte("test-control-message"),
-		ControlAckRequest: e2.ControlAckRequestACK,
-	}
+func CreateRICControlRequest() *models.RICcontrolRequest {
+	return &models.RICcontrolRequest{}
 }
 
 // A1 Test Message builders
 
 // CreateA1PolicyType creates a test A1 policy type
-func CreateA1PolicyType(policyTypeID int, name string) *a1.PolicyType {
-	return &a1.PolicyType{
+func CreateA1PolicyType(policyTypeID string, name string) *a1.A1PolicyType {
+	return &a1.A1PolicyType{
 		PolicyTypeID: policyTypeID,
 		Name:         name,
 		Description:  fmt.Sprintf("Test policy type: %s", name),
-		Version:      "1.0.0",
-		CreateSchema: map[string]interface{}{
+		PolicySchema: map[string]interface{}{
 			"$schema": "http://json-schema.org/draft-07/schema#",
 			"type":    "object",
 			"properties": map[string]interface{}{
@@ -387,11 +365,10 @@ func CreateA1PolicyType(policyTypeID int, name string) *a1.PolicyType {
 }
 
 // CreateA1PolicyInstance creates a test A1 policy instance
-func CreateA1PolicyInstance(policyID string, policyTypeID int, ricID string) *a1.PolicyInstance {
-	return &a1.PolicyInstance{
+func CreateA1PolicyInstance(policyID string, policyTypeID string) *a1.A1Policy {
+	return &a1.A1Policy{
 		PolicyID:     policyID,
 		PolicyTypeID: policyTypeID,
-		RICID:        ricID,
 		PolicyData: map[string]interface{}{
 			"scope": map[string]interface{}{
 				"ue_id": "12345678901234567890",
@@ -407,61 +384,14 @@ func CreateA1PolicyInstance(policyID string, policyTypeID int, ricID string) *a1
 
 // xApp Test builders
 
-// CreateTestXAppSpec creates a test xApp specification
-func CreateTestXAppSpec(name, version string) *xapp.XAppSpec {
-	return &xapp.XAppSpec{
+// CreateTestXApp creates a test xApp
+func CreateTestXApp(name, version string) *xapp.XApp {
+	return &xapp.XApp{
 		Name:        name,
 		Version:     version,
 		Description: fmt.Sprintf("Test xApp: %s", name),
-		HelmChart: xapp.HelmChart{
-			Repository: "oci://registry-1.docker.io/test",
-			Name:       name,
-			Version:    version,
-		},
-		ConfigSchema: map[string]interface{}{
-			"$schema": "http://json-schema.org/draft-07/schema#",
-			"type":    "object",
-			"properties": map[string]interface{}{
-				"log_level": map[string]interface{}{
-					"type":    "string",
-					"enum":    []string{"debug", "info", "warn", "error"},
-					"default": "info",
-				},
-			},
-		},
-		ResourceRequirements: xapp.ResourceRequirements{
-			Requests: map[string]string{
-				"cpu":    "100m",
-				"memory": "128Mi",
-			},
-			Limits: map[string]string{
-				"cpu":    "500m",
-				"memory": "512Mi",
-			},
-		},
-		Interfaces: map[string]xapp.InterfaceRequirement{
-			"e2": {
-				Required: true,
-				Version:  "v3.0",
-			},
-		},
-	}
-}
-
-// CreateTestXAppDeployment creates a test xApp deployment
-func CreateTestXAppDeployment(xappName, instanceName, namespace string) *xapp.XAppDeploymentSpec {
-	return &xapp.XAppDeploymentSpec{
-		XAppName:     xappName,
-		InstanceName: instanceName,
-		Namespace:    namespace,
-		Config: map[string]interface{}{
-			"log_level": "debug",
-		},
-		ResourceOverrides: map[string]interface{}{
-			"requests": map[string]interface{}{
-				"cpu":    "200m",
-				"memory": "256Mi",
-			},
+		Deployment: xapp.XAppDeploymentSpec{
+			Image: "test-image",
 		},
 	}
 }

@@ -16,6 +16,110 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+// RICTestClient is a client for the RIC under test.
+type RICTestClient struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// RICClientConfig is the configuration for the RICTestClient.
+type RICClientConfig struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// NewRICTestClient creates a new RICTestClient.
+func NewRICTestClient(config *RICClientConfig) *RICTestClient {
+	return &RICTestClient{
+		Host:    config.Host,
+		Port:    config.Port,
+		Timeout: config.Timeout,
+		Logger:  config.Logger,
+	}
+}
+
+// E2TestClient is a client for the E2 interface under test.
+type E2TestClient struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// E2ClientConfig is the configuration for the E2TestClient.
+type E2ClientConfig struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// NewE2TestClient creates a new E2TestClient.
+func NewE2TestClient(config *E2ClientConfig) *E2TestClient {
+	return &E2TestClient{
+		Host:    config.Host,
+		Port:    config.Port,
+		Timeout: config.Timeout,
+		Logger:  config.Logger,
+	}
+}
+
+// A1TestClient is a client for the A1 interface under test.
+type A1TestClient struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// A1ClientConfig is the configuration for the A1TestClient.
+type A1ClientConfig struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// NewA1TestClient creates a new A1TestClient.
+func NewA1TestClient(config *A1ClientConfig) *A1TestClient {
+	return &A1TestClient{
+		Host:    config.Host,
+		Port:    config.Port,
+		Timeout: config.Timeout,
+		Logger:  config.Logger,
+	}
+}
+
+// O1TestClient is a client for the O1 interface under test.
+type O1TestClient struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// O1ClientConfig is the configuration for the O1TestClient.
+type O1ClientConfig struct {
+	Host    string
+	Port    int
+	Timeout time.Duration
+	Logger  *logrus.Logger
+}
+
+// NewO1TestClient creates a new O1TestClient.
+func NewO1TestClient(config *O1ClientConfig) *O1TestClient {
+	return &O1TestClient{
+		Host:    config.Host,
+		Port:    config.Port,
+		Timeout: config.Timeout,
+		Logger:  config.Logger,
+	}
+}
+
 // IntegrationTestSuite provides a comprehensive testing framework for O-RAN Near-RT RIC
 type IntegrationTestSuite struct {
 	suite.Suite

@@ -12,12 +12,9 @@ import (
 )
 
 func main() {
-	var (
-		configFile = flag.String("config", "/etc/near-rt-ric/config.yaml", "Path to configuration file")
-	)
 	flag.Parse()
 
-	cfg, err := config.LoadConfig(*configFile)
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(1)

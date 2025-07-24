@@ -21,7 +21,7 @@ type XAppManagerImpl struct {
 	cancel       context.CancelFunc
 
 	// Internal state
-	instances map[string]*XAppInstance
+	instances map[XAppInstanceID]*XAppInstance
 	conflicts map[string]*XAppConflict
 	eventSubs map[string]chan *XAppEvent
 	mutex     sync.RWMutex
@@ -37,6 +37,7 @@ func NewXAppManager(
 	orchestrator XAppOrchestrator,
 	registry XAppRegistry,
 	config *XAppFrameworkConfig,
+	logger *logrus.Logger,
 ) XAppManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -45,10 +46,10 @@ func NewXAppManager(
 		orchestrator: orchestrator,
 		registry:     registry,
 		config:       config,
-		logger:       logrus.WithField("component", "xapp-manager").Logger,
+		logger:       logger,
 		ctx:          ctx,
 		cancel:       cancel,
-		instances:    make(map[string]*XAppInstance),
+		instances:    make(map[XAppInstanceID]*XAppInstance),
 		conflicts:    make(map[string]*XAppConflict),
 		eventSubs:    make(map[string]chan *XAppEvent),
 	}
@@ -73,24 +74,21 @@ func (mgr *XAppManagerImpl) Deploy(descriptor *XAppDescriptor, config map[string
 	}
 
 	// Generate unique instance ID
-	instanceID := uuid.New().String()
+	instanceID := XAppInstanceID(uuid.New().String())
 
 	// Create instance
 	instance := &XAppInstance{
-		ID:        instanceID,
-		Name:      descriptor.Name,
-		Version:   descriptor.Version,
-		Namespace: descriptor.Namespace,
-		Status:    XAppStatusDeployed,
-		Config:    config,
-		Health: XAppHealth{
-			Status: "UNKNOWN",
-			Checks: make(map[string]HealthCheck),
+		InstanceID: instanceID,
+		XAppID:     XAppID(descriptor.Name),
+		Name:       descriptor.Name,
+		Status:     XAppStatusDeploying,
+		Config:     config,
+		HealthStatus: XAppHealthStatus{
+			Overall: HealthStateUnknown,
 		},
 		Metrics:   XAppMetrics{},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		LastPing:  time.Now(),
 	}
 
 	// Check for conflicts before deployment
@@ -107,8 +105,14 @@ func (mgr *XAppManagerImpl) Deploy(descriptor *XAppDescriptor, config map[string
 
 	// Deploy via orchestrator
 	if err := mgr.orchestrator.DeployXApp(descriptor, config); err != nil {
+		instance.Status = XAppStatusFailed
+		instance.LastError = err.Error()
+		mgr.repository.SaveInstance(instance)
 		return nil, fmt.Errorf("orchestrator deployment failed: %w", err)
 	}
+
+	// Update status
+	instance.Status = XAppStatusRunning
 
 	// Save instance to repository
 	if err := mgr.repository.SaveInstance(instance); err != nil {
@@ -143,16 +147,17 @@ func (mgr *XAppManagerImpl) Deploy(descriptor *XAppDescriptor, config map[string
 
 // Undeploy implements xApp undeployment
 func (mgr *XAppManagerImpl) Undeploy(xappID string) error {
+	instanceID := XAppInstanceID(xappID)
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	instance, exists := mgr.instances[xappID]
+	instance, exists := mgr.instances[instanceID]
 	if !exists {
 		return fmt.Errorf("xApp instance %s not found", xappID)
 	}
 
 	// Update status to terminating
-	instance.Status = XAppStatusTerminating
+	instance.Status = XAppStatusStopping
 	instance.UpdatedAt = time.Now()
 
 	// Undeploy via orchestrator
@@ -161,7 +166,7 @@ func (mgr *XAppManagerImpl) Undeploy(xappID string) error {
 	}
 
 	// Unregister from registry
-	if err := mgr.registry.Unregister(xappID); err != nil {
+	if err := mgr.registry.Unregister(string(instance.InstanceID)); err != nil {
 		mgr.logger.WithError(err).Warn("Failed to unregister instance from registry")
 	}
 
@@ -171,18 +176,16 @@ func (mgr *XAppManagerImpl) Undeploy(xappID string) error {
 	}
 
 	// Remove from local cache
-	delete(mgr.instances, xappID)
+	delete(mgr.instances, instanceID)
 
 	// Publish undeployment event
-	mgr.publishEvent(xappID, XAppEventShutdown, "xApp undeployed successfully", map[string]interface{}{
-		"name":    instance.Name,
-		"version": instance.Version,
+	mgr.publishEvent(instanceID, XAppEventShutdown, "xApp undeployed successfully", map[string]interface{}{
+		"name": instance.Name,
 	})
 
 	mgr.logger.WithFields(logrus.Fields{
 		"instance_id": xappID,
 		"name":        instance.Name,
-		"version":     instance.Version,
 	}).Info("xApp undeployed successfully")
 
 	return nil
@@ -190,10 +193,11 @@ func (mgr *XAppManagerImpl) Undeploy(xappID string) error {
 
 // Start implements xApp starting
 func (mgr *XAppManagerImpl) Start(xappID string) error {
+	instanceID := XAppInstanceID(xappID)
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	instance, exists := mgr.instances[xappID]
+	instance, exists := mgr.instances[instanceID]
 	if !exists {
 		return fmt.Errorf("xApp instance %s not found", xappID)
 	}
@@ -217,7 +221,7 @@ func (mgr *XAppManagerImpl) Start(xappID string) error {
 	}
 
 	// Publish startup event
-	mgr.publishEvent(xappID, XAppEventStartup, "xApp started successfully", nil)
+	mgr.publishEvent(instanceID, XAppEventStartup, "xApp started successfully", nil)
 
 	mgr.logger.WithField("instance_id", xappID).Info("xApp started successfully")
 
@@ -226,10 +230,11 @@ func (mgr *XAppManagerImpl) Start(xappID string) error {
 
 // Stop implements xApp stopping
 func (mgr *XAppManagerImpl) Stop(xappID string) error {
+	instanceID := XAppInstanceID(xappID)
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	instance, exists := mgr.instances[xappID]
+	instance, exists := mgr.instances[instanceID]
 	if !exists {
 		return fmt.Errorf("xApp instance %s not found", xappID)
 	}
@@ -253,7 +258,7 @@ func (mgr *XAppManagerImpl) Stop(xappID string) error {
 	}
 
 	// Publish shutdown event
-	mgr.publishEvent(xappID, XAppEventShutdown, "xApp stopped successfully", nil)
+	mgr.publishEvent(instanceID, XAppEventShutdown, "xApp stopped successfully", nil)
 
 	mgr.logger.WithField("instance_id", xappID).Info("xApp stopped successfully")
 
@@ -289,10 +294,11 @@ func (mgr *XAppManagerImpl) List() ([]*XAppInstance, error) {
 
 // Get implements getting a specific xApp instance
 func (mgr *XAppManagerImpl) Get(xappID string) (*XAppInstance, error) {
+	instanceID := XAppInstanceID(xappID)
 	mgr.mutex.RLock()
 	defer mgr.mutex.RUnlock()
 
-	instance, exists := mgr.instances[xappID]
+	instance, exists := mgr.instances[instanceID]
 	if !exists {
 		return nil, fmt.Errorf("xApp instance %s not found", xappID)
 	}
@@ -322,8 +328,8 @@ func (mgr *XAppManagerImpl) GetHealth(xappID string) (*XAppHealth, error) {
 	if health, err := mgr.orchestrator.CheckHealth(xappID); err == nil {
 		// Update cached health
 		mgr.mutex.Lock()
-		if cachedInstance, exists := mgr.instances[xappID]; exists {
-			cachedInstance.Health = *health
+		if cachedInstance, exists := mgr.instances[XAppInstanceID(xappID)]; exists {
+			cachedInstance.HealthStatus.Overall = HealthState(health.Status)
 			cachedInstance.UpdatedAt = time.Now()
 		}
 		mgr.mutex.Unlock()
@@ -331,7 +337,7 @@ func (mgr *XAppManagerImpl) GetHealth(xappID string) (*XAppHealth, error) {
 	}
 
 	// Return cached health
-	return &instance.Health, nil
+	return &XAppHealth{Status: string(instance.HealthStatus.Overall)}, nil
 }
 
 // GetMetrics implements getting xApp metrics
@@ -348,10 +354,11 @@ func (mgr *XAppManagerImpl) GetMetrics(xappID string) (*XAppMetrics, error) {
 
 // UpdateConfig implements updating xApp configuration
 func (mgr *XAppManagerImpl) UpdateConfig(xappID string, config map[string]interface{}) error {
+	instanceID := XAppInstanceID(xappID)
 	mgr.mutex.Lock()
 	defer mgr.mutex.Unlock()
 
-	instance, exists := mgr.instances[xappID]
+	instance, exists := mgr.instances[instanceID]
 	if !exists {
 		return fmt.Errorf("xApp instance %s not found", xappID)
 	}
@@ -366,7 +373,7 @@ func (mgr *XAppManagerImpl) UpdateConfig(xappID string, config map[string]interf
 	}
 
 	// Publish configuration change event
-	mgr.publishEvent(xappID, XAppEventConfigChange, "xApp configuration updated", map[string]interface{}{
+	mgr.publishEvent(instanceID, XAppEventConfigChange, "xApp configuration updated", map[string]interface{}{
 		"config": config,
 	})
 
@@ -390,13 +397,13 @@ func (mgr *XAppManagerImpl) DetectConflicts(xappID string) ([]*XAppConflict, err
 		return nil, fmt.Errorf("conflict detection is disabled")
 	}
 
-	instance, exists := mgr.instances[xappID]
-	if !exists {
-		return nil, fmt.Errorf("xApp instance %s not found", xappID)
+	instance, err := mgr.Get(xappID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get xApp descriptor from repository
-	descriptor, err := mgr.repository.GetDescriptor(instance.Name, instance.Version)
+	descriptor, err := mgr.repository.GetDescriptor(instance.Name, "latest") // Assuming latest version
 	if err != nil {
 		return nil, fmt.Errorf("failed to get descriptor: %w", err)
 	}
@@ -530,7 +537,7 @@ func (mgr *XAppManagerImpl) loadInstances() {
 
 	mgr.mutex.Lock()
 	for _, instance := range instances {
-		mgr.instances[instance.ID] = instance
+		mgr.instances[instance.InstanceID] = instance
 	}
 	mgr.mutex.Unlock()
 
@@ -571,7 +578,7 @@ func (mgr *XAppManagerImpl) metricsCollectionLoop() {
 
 func (mgr *XAppManagerImpl) performHealthChecks() {
 	mgr.mutex.RLock()
-	instances := make(map[string]*XAppInstance)
+	instances := make(map[XAppInstanceID]*XAppInstance)
 	for id, instance := range mgr.instances {
 		if instance.Status == XAppStatusRunning {
 			instances[id] = instance
@@ -580,8 +587,8 @@ func (mgr *XAppManagerImpl) performHealthChecks() {
 	mgr.mutex.RUnlock()
 
 	for xappID := range instances {
-		go func(id string) {
-			health, err := mgr.orchestrator.CheckHealth(id)
+		go func(id XAppInstanceID) {
+			health, err := mgr.orchestrator.CheckHealth(string(id))
 			if err != nil {
 				mgr.publishEvent(id, XAppEventHealthCheck, "Health check failed", map[string]interface{}{
 					"error": err.Error(),
@@ -591,9 +598,8 @@ func (mgr *XAppManagerImpl) performHealthChecks() {
 
 			mgr.mutex.Lock()
 			if instance, exists := mgr.instances[id]; exists {
-				instance.Health = *health
+				instance.HealthStatus.Overall = HealthState(health.Status)
 				instance.UpdatedAt = time.Now()
-				instance.LastPing = time.Now()
 			}
 			mgr.mutex.Unlock()
 		}(xappID)
@@ -605,15 +611,15 @@ func (mgr *XAppManagerImpl) collectMetrics() {
 	mgr.logger.Debug("Collecting xApp metrics")
 }
 
-func (mgr *XAppManagerImpl) publishEvent(xappID string, eventType XAppEventType, message string, data map[string]interface{}) {
+func (mgr *XAppManagerImpl) publishEvent(instanceID XAppInstanceID, eventType XAppEventType, message string, data map[string]interface{}) {
 	event := &XAppEvent{
-		ID:        uuid.New().String(),
-		XAppID:    xappID,
-		EventType: eventType,
-		Timestamp: time.Now(),
-		Message:   message,
-		Data:      data,
-		Severity:  EventSeverityInfo,
+		EventID:    uuid.New().String(),
+		InstanceID: instanceID,
+		EventType:  string(eventType),
+		Timestamp:  time.Now(),
+		Message:    message,
+		Details:    data,
+		Severity:   string(EventSeverityInfo),
 	}
 
 	// Save to repository
@@ -642,7 +648,7 @@ func (mgr *XAppManagerImpl) detectPotentialConflicts(descriptor *XAppDescriptor)
 			continue
 		}
 
-		existingDescriptor, err := mgr.repository.GetDescriptor(instance.Name, instance.Version)
+		existingDescriptor, err := mgr.repository.GetDescriptor(instance.Name, "latest")
 		if err != nil {
 			continue
 		}
@@ -652,7 +658,7 @@ func (mgr *XAppManagerImpl) detectPotentialConflicts(descriptor *XAppDescriptor)
 			conflict := &XAppConflict{
 				ID:           uuid.New().String(),
 				XAppID1:      "new-deployment",
-				XAppID2:      instance.ID,
+				XAppID2:      string(instance.InstanceID),
 				ConflictType: ConflictTypeResource,
 				Description:  "Resource allocation conflict detected",
 				DetectedAt:   time.Now(),
@@ -666,7 +672,7 @@ func (mgr *XAppManagerImpl) detectPotentialConflicts(descriptor *XAppDescriptor)
 			conflict := &XAppConflict{
 				ID:           uuid.New().String(),
 				XAppID1:      "new-deployment",
-				XAppID2:      instance.ID,
+				XAppID2:      string(instance.InstanceID),
 				ConflictType: ConflictTypeInterface,
 				Description:  "Interface usage conflict detected",
 				DetectedAt:   time.Now(),
@@ -681,20 +687,12 @@ func (mgr *XAppManagerImpl) detectPotentialConflicts(descriptor *XAppDescriptor)
 
 func (mgr *XAppManagerImpl) hasResourceConflict(desc1, desc2 *XAppDescriptor) bool {
 	// Simplified conflict detection - in reality this would be more sophisticated
-	return desc1.Resources.CPU == desc2.Resources.CPU && desc1.Resources.Memory == desc2.Resources.Memory
+	return desc1.Resources.Limits.CPU == desc2.Resources.Limits.CPU && desc1.Resources.Limits.Memory == desc2.Resources.Limits.Memory
 }
 
 func (mgr *XAppManagerImpl) hasInterfaceConflict(desc1, desc2 *XAppDescriptor) bool {
 	// Check if both xApps require the same E2 functions
-	if desc1.Interfaces.E2.Enabled && desc2.Interfaces.E2.Enabled {
-		for _, func1 := range desc1.Interfaces.E2.RequiredFunctions {
-			for _, func2 := range desc2.Interfaces.E2.RequiredFunctions {
-				if func1 == func2 {
-					return true
-				}
-			}
-		}
-	}
+	// This is a placeholder for a more complex logic
 	return false
 }
 

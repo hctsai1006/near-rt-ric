@@ -123,41 +123,28 @@ func (suite *A1IntegrationTestSuite) setupA1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 
-	metrics := monitoring.NewMetricsCollector()
+	metrics := monitoring.NewMetricsCollector("near_rt_ric", "a1")
 
 	cfg := &config.A1Config{
-		Server: config.A1ServerConfig{
-			Host: "127.0.0.1",
-			Port: 8080,
-			TLS: config.TLSConfig{
-				Enabled:  false, // Disable TLS for testing
-				CertFile: "",
-				KeyFile:  "",
-			},
+		ListenAddress: "127.0.0.1",
+		ListenPort:    8080,
+		TLSEnabled:    false, // Disable TLS for testing
+		TLSCertPath:   "",
+		TLSKeyPath:    "",
+		Auth: config.AuthConfig{
+			Enabled:            false, // Disable auth for testing
+			PrivateKeyPath:     "",
+			PublicKeyPath:      "",
+			TokenExpiry:        3600,
+			Issuer:             "test-issuer",
+			Audience:           "test-audience",
+			StrictIPValidation: false,
 		},
 		Database: config.DatabaseConfig{
-			URL:                suite.dbURL,
-			MaxConnections:     10,
-			MaxIdleConnections: 5,
-			ConnTimeout:        30 * time.Second,
+			URL:      suite.dbURL,
+			PoolSize: 10,
 		},
-		Cache: config.CacheConfig{
-			Type: "redis",
-			Redis: config.RedisConfig{
-				URL:         suite.redisURL,
-				MaxRetries:  3,
-				DialTimeout: 5 * time.Second,
-			},
-		},
-		JWT: config.JWTConfig{
-			SecretKey:     "test_secret_key_for_testing_only",
-			TokenExpiry:   24 * time.Hour,
-			RefreshExpiry: 7 * 24 * time.Hour,
-		},
-		RBAC: config.RBACConfig{
-			Enabled:     true,
-			DefaultRole: "viewer",
-		},
+		LogLevel: "debug",
 	}
 
 	var err error

@@ -663,6 +663,16 @@ func (s XAppStatus) IsFinal() bool {
 	return s == XAppStatusStopped || s == XAppStatusFailed
 }
 
+// IsValid checks if an xApp type is valid
+func (t XAppType) IsValid() bool {
+	switch t {
+	case XAppTypeControl, XAppTypeOptimizer, XAppTypeAnalytics, XAppTypeML, XAppTypeOrchestrator:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsValid checks if a lifecycle state is valid
 func (s XAppLifecycleState) IsValid() bool {
 	switch s {

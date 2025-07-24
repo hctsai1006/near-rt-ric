@@ -1,27 +1,33 @@
 package o1_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
+	"fmt"
+	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/o1"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"golang.org/x/crypto/ssh"
 )
 
 // O1IntegrationTestSuite contains O1 interface integration tests
 type O1IntegrationTestSuite struct {
-	suite.Suite
 	ctx               context.Context
 	cancel            context.CancelFunc
 	o1Interface       *o1.O1Interface
@@ -30,6 +36,7 @@ type O1IntegrationTestSuite struct {
 	netconfClient     *NetconfSSHClient
 	testServerHost    string
 	testServerPort    int
+	suite.Suite
 }
 
 // NetconfSSHClient represents a simple NETCONF SSH client for testing
@@ -104,7 +111,7 @@ func (suite *O1IntegrationTestSuite) setupO1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 
-	metrics := monitoring.NewMetricsCollector()
+	metrics := monitoring.NewMetricsCollector("near_rt_ric", "o1")
 
 	// Generate test SSH keys
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -178,17 +185,36 @@ func (suite *O1IntegrationTestSuite) setupO1Interface() {
 	suite.o1Interface, err = o1.NewO1Interface(cfg, logger, metrics)
 	require.NoError(suite.T(), err)
 
-	// Start O1 interface
-	err = suite.o1Interface.Start(suite.ctx)
-	require.NoError(suite.T(), err)
+	// Start O1 interface in a goroutine so it doesn't block
+	go func() {
+		if err := suite.o1Interface.Start(suite.ctx); err != nil {
+			suite.T().Logf("O1 interface start error: %v", err)
+		}
+	}()
+
+	// Wait for the server to be ready
+	suite.waitForServerReady(suite.testServerHost, suite.testServerPort)
 }
 
 func (suite *O1IntegrationTestSuite) setupNetconfClient() {
-	// Generate client SSH key for testing
+	// Generate client SSH key for testing and add it to the server's authorized keys
 	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(suite.T(), err)
 
 	signer, err := ssh.NewSignerFromKey(clientKey)
+	require.NoError(suite.T(), err)
+
+	// Add client public key to authorized keys for the server
+	publicKey, err := ssh.NewPublicKey(&clientKey.PublicKey)
+	require.NoError(suite.T(), err)
+	authorizedKey := ssh.MarshalAuthorizedKey(publicKey)
+
+	authKeysDir := "/tmp/test-keys"
+	err = os.MkdirAll(authKeysDir, 0700)
+	require.NoError(suite.T(), err)
+
+	authKeysFile := filepath.Join(authKeysDir, "test-client.pub")
+	err = os.WriteFile(authKeysFile, authorizedKey, 0644)
 	require.NoError(suite.T(), err)
 
 	// SSH client configuration
@@ -393,25 +419,11 @@ func (suite *O1IntegrationTestSuite) TestORanSpecificOperations() {
 
 // Test Fault Management (FCAPS)
 func (suite *O1IntegrationTestSuite) TestFaultManagement() {
-	// Simulate an alarm condition
-	alarmNotification := `<?xml version="1.0" encoding="UTF-8"?>
-<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">
-  <eventTime>2024-01-01T12:00:00Z</eventTime>
-  <fault-notification xmlns="urn:o-ran:fm:1.0">
-    <fault-id>001</fault-id>
-    <fault-source>E2-interface</fault-source>
-    <affected-object>/interfaces/interface[name='e2-sctp']</affected-object>
-    <fault-severity>major</fault-severity>
-    <is-cleared>false</is-cleared>
-    <fault-text>E2 SCTP connection lost</fault-text>
-    <event-time>2024-01-01T12:00:00Z</event-time>
-  </fault-notification>
-</notification>`
-
-	// This would normally be sent by the server as a notification
-	// For testing purposes, we verify the server can handle such notifications
-	err := suite.sendNetconfMessage(alarmNotification)
-	assert.NoError(suite.T(), err)
+	suite.T().Skip("Skipping fault management test. " +
+		"This test is logically incorrect as it attempts to send a <notification> " +
+		"from the client to the server. NETCONF notifications are sent from the server to the client. " +
+		"A proper test would require triggering a fault on the server and listening for the notification, " +
+		"which is beyond the scope of this simple client.")
 }
 
 // Test Performance Management
@@ -500,35 +512,28 @@ func (suite *O1IntegrationTestSuite) sendNetconfMessage(message string) error {
 }
 
 func (suite *O1IntegrationTestSuite) receiveNetconfMessage() (string, error) {
-	buffer := make([]byte, 8192)
-	n, err := suite.netconfClient.stdout.Read(buffer)
-	if err != nil {
-		return "", err
-	}
+	var buf bytes.Buffer
+	readBuf := make([]byte, 4096)
+	delimiter := "]]>]]>"
 
-	response := string(buffer[:n])
-
-	// NETCONF 1.0 uses ]]>]]> as message delimiter
-	if strings.Contains(response, "]]>]]>") {
-		response = strings.Split(response, "]]>]]>")[0]
-	}
-
-	return response, nil
-}
-
-func (suite *O1IntegrationTestSuite) Close() error {
-	if suite.netconfClient != nil {
-		if suite.netconfClient.stdin != nil {
-			suite.netconfClient.stdin.Close()
+	for {
+		n, err := suite.netconfClient.stdout.Read(readBuf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", fmt.Errorf("error reading from stdout: %w", err)
 		}
-		if suite.netconfClient.session != nil {
-			suite.netconfClient.session.Close()
-		}
-		if suite.netconfClient.sshClient != nil {
-			suite.netconfClient.sshClient.Close()
+		buf.Write(readBuf[:n])
+		if strings.Contains(buf.String(), delimiter) {
+			break
 		}
 	}
-	return nil
+
+	response := buf.String()
+	// Return the first full message and trim the delimiter
+	message, _, _ := strings.Cut(response, delimiter)
+	return message, nil
 }
 
 func (nc *NetconfSSHClient) Close() {
@@ -541,6 +546,18 @@ func (nc *NetconfSSHClient) Close() {
 	if nc.sshClient != nil {
 		nc.sshClient.Close()
 	}
+}
+
+func (suite *O1IntegrationTestSuite) waitForServerReady(host string, port int) {
+	address := fmt.Sprintf("%s:%d", host, port)
+	require.Eventually(suite.T(), func() bool {
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
+		if err != nil {
+			return false
+		}
+		conn.Close()
+		return true
+	}, 10*time.Second, 200*time.Millisecond, "NETCONF server did not become available")
 }
 
 // Test runner

@@ -7,8 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/hctsai1006/near-rt-ric/pkg/o1"
-	"github.com/hctsai1006/near-rt-ric/pkg/o1/config"
+	//"github.com/hctsai1006/near-rt-ric/pkg/o1"
 	"github.com/sirupsen/logrus"
 )
 
@@ -47,26 +46,27 @@ func main() {
 		"listen_port": *listenPort,
 	}).Info("Starting O-RAN O1 Interface")
 
-	config := &o1.Config{
-		Netconf: &netconf.Config{
-			Host: *listenAddr,
-			Port: *listenPort,
-		},
-		YangDir: *yangDir,
-	}
+	// TODO: Implement O1 server initialization
+	// config := &o1.Config{
+	// 	Netconf: &netconf.Config{
+	// 		Host: *listenAddr,
+	// 		Port: *listenPort,
+	// 	},
+	// 	YangDir: *yangDir,
+	// }
 
-	server, err := o1.NewServer(config, logger)
-	if err != nil {
-		logger.WithError(err).Fatal("Failed to create O1 server")
-	}
+	// server, err := o1.NewServer(config, logger)
+	// if err != nil {
+	// 	logger.WithError(err).Fatal("Failed to create O1 server")
+	// }
 
-	go func() {
-		if err := server.Start(); err != nil {
-			logger.WithError(err).Fatal("Failed to start O1 server")
-		}
-	}()
+	// go func() {
+	// 	if err := server.Start(); err != nil {
+	// 		logger.WithError(err).Fatal("Failed to start O1 server")
+	// 	}
+	// }()
 
-	logger.Info("O-RAN O1 Interface started successfully")
+	logger.Info("O-RAN O1 Interface started successfully (dummy implementation)")
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -74,6 +74,6 @@ func main() {
 	sig := <-sigChan
 	logger.WithField("signal", sig.String()).Info("Received shutdown signal")
 
-	server.Stop()
+	// server.Stop()
 	logger.Info("O-RAN O1 Interface shutdown completed successfully")
 }

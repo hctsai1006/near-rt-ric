@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
+	"github.com/hctsai1006/near-rt-ric/pkg/o1/netconf"
 	"github.com/sirupsen/logrus"
 )
 
@@ -54,4 +55,16 @@ func (m *Manager) LoadModels(dir string) error {
 func (m *Manager) GetModule(name string) (*Module, bool) {
 	module, ok := m.modules[name]
 	return module, ok
+}
+
+// HandleRPC handles a NETCONF RPC request
+func (m *Manager) HandleRPC(rpc *netconf.RPCRequest) (*netconf.RPCReply, error) {
+	// This is a placeholder implementation.
+	// In a real implementation, you would parse the RPC request and interact with the YANG models.
+	m.logger.WithField("payload", string(rpc.Payload)).Info("Handling RPC request")
+
+	return &netconf.RPCReply{
+		MessageID: rpc.MessageID,
+		Data:      "<ok/>",
+	}, nil
 }
