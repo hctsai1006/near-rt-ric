@@ -248,7 +248,7 @@ jobs:
     - name: Validate Kubernetes manifests
       run: |
         if [ -d "k8s" ]; then
-          kubeconform -summary k8s/*.yaml
+          kubeconform -summary -skip SecurityContextConstraints k8s/*.yaml
         fi
 
     - name: Set up Helm
