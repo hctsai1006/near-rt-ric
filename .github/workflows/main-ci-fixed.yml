@@ -250,7 +250,7 @@ jobs:
         if [ -d "k8s" ]; then
           for file in k8s/*.yaml; do
             if [ -f "$file" ]; then
-              kubectl --dry-run=client apply -f "$file" --validate=false
+              kubectl schema --local --schema-location=https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/v2/swagger.json "$file"
             fi
           done
         fi
