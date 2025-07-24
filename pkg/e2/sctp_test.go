@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package e2
@@ -33,13 +34,13 @@ func TestSCTPServer(t *testing.T) {
 
 	// 1. Set up the SCTP Server
 	serverConfig := &SCTPConfig{
-		ListenAddress: "127.0.0.1",
-		Port:          36423,
-		MaxConnections: 10,
+		ListenAddress:     "127.0.0.1",
+		Port:              36423,
+		MaxConnections:    10,
 		ConnectionTimeout: 5 * time.Second,
 		HeartbeatInterval: 1 * time.Second,
-		BufferSize: 1500,
-		Streams: 3,
+		BufferSize:        1500,
+		Streams:           3,
 	}
 	server, err := NewSCTPServer(serverConfig, log)
 	require.NoError(t, err, "Server should start without errors")

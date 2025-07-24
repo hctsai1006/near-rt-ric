@@ -49,7 +49,7 @@ func (v *A1PolicyValidatorImpl) ValidatePolicy(policy *A1Policy, policyType *A1P
 	}
 
 	if policy.PolicyTypeID != policyType.PolicyTypeID {
-		return fmt.Errorf("policy type ID mismatch: expected %s, got %s", 
+		return fmt.Errorf("policy type ID mismatch: expected %s, got %s",
 			policyType.PolicyTypeID, policy.PolicyTypeID)
 	}
 

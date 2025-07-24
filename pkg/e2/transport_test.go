@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package e2
@@ -21,13 +22,13 @@ func TestSCTPServer_Listen(t *testing.T) {
 	log := logrus.New()
 	// handler := func(conn *sctp.SCTPConn, msg []byte) {}
 	serverConfig := &SCTPConfig{
-		ListenAddress: "127.0.0.1",
-		Port:          36424,
-		MaxConnections: 10,
+		ListenAddress:     "127.0.0.1",
+		Port:              36424,
+		MaxConnections:    10,
 		ConnectionTimeout: 5 * time.Second,
 		HeartbeatInterval: 1 * time.Second,
-		BufferSize: 1500,
-		Streams: 3,
+		BufferSize:        1500,
+		Streams:           3,
 	}
 	server, err := NewSCTPServer(serverConfig, log)
 
@@ -42,18 +43,18 @@ func TestSCTPServer_Listen(t *testing.T) {
 func TestSCTPServer_SendMessage_NoConnection(t *testing.T) {
 	log := logrus.New()
 	serverConfig := &SCTPConfig{
-		ListenAddress: "127.0.0.1",
-		Port:          36425,
-		MaxConnections: 10,
+		ListenAddress:     "127.0.0.1",
+		Port:              36425,
+		MaxConnections:    10,
 		ConnectionTimeout: 5 * time.Second,
 		HeartbeatInterval: 1 * time.Second,
-		BufferSize: 1500,
-		Streams: 3,
+		BufferSize:        1500,
+		Streams:           3,
 	}
 	server, err := NewSCTPServer(serverConfig, log)
 	require.NoError(t, err, "Server should be created without errors")
 
-		err = server.SendToNode("non-existent-node", []byte("test"))
+	err = server.SendToNode("non-existent-node", []byte("test"))
 	assert.Error(t, err, "Should return an error")
 	assert.EqualError(t, err, "no connection found for node non-existent-node", "Error message should indicate no active connection")
 }

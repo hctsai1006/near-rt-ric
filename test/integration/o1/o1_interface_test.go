@@ -34,12 +34,12 @@ type O1IntegrationTestSuite struct {
 
 // NetconfSSHClient represents a simple NETCONF SSH client for testing
 type NetconfSSHClient struct {
-	conn       net.Conn
-	sshClient  *ssh.Client
-	session    *ssh.Session
-	stdin      io.WriteCloser
-	stdout     io.Reader
-	stderr     io.Reader
+	conn      net.Conn
+	sshClient *ssh.Client
+	session   *ssh.Session
+	stdin     io.WriteCloser
+	stdout    io.Reader
+	stderr    io.Reader
 }
 
 // SetupSuite runs before all tests
@@ -52,7 +52,7 @@ func (suite *O1IntegrationTestSuite) SetupSuite() {
 
 	// Wait for interface to be ready
 	time.Sleep(5 * time.Second)
-	
+
 	// Setup NETCONF client
 	suite.setupNetconfClient()
 }
@@ -163,14 +163,14 @@ func (suite *O1IntegrationTestSuite) setupO1Interface() {
 				HeartbeatInterval: 30 * time.Second,
 			},
 			ConfigurationManagement: config.ConfigurationManagementConfig{
-				Enabled:           true,
-				BackupInterval:    24 * time.Hour,
-				MaxBackups:        7,
+				Enabled:        true,
+				BackupInterval: 24 * time.Hour,
+				MaxBackups:     7,
 			},
 			PerformanceManagement: config.PerformanceManagementConfig{
-				Enabled:          true,
+				Enabled:            true,
 				CollectionInterval: 15 * time.Minute,
-				MetricsRetention: 30 * 24 * time.Hour,
+				MetricsRetention:   30 * 24 * time.Hour,
 			},
 		},
 	}
@@ -505,14 +505,14 @@ func (suite *O1IntegrationTestSuite) receiveNetconfMessage() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	response := string(buffer[:n])
-	
+
 	// NETCONF 1.0 uses ]]>]]> as message delimiter
 	if strings.Contains(response, "]]>]]>") {
 		response = strings.Split(response, "]]>]]>")[0]
 	}
-	
+
 	return response, nil
 }
 

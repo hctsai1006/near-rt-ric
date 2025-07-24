@@ -20,13 +20,13 @@ const (
 )
 
 var (
-	ricAddr   = flag.String("ric-addr", "127.0.0.1", "RIC address to connect to")
-	ricPort   = flag.Int("ric-port", 36421, "RIC port to connect to")
-	nodeID    = flag.String("node-id", "gnb_001", "E2 node identifier")
-	nodeType  = flag.String("node-type", "gnb", "E2 node type (gnb)")
-	plmnID    = flag.String("plmn-id", "310410", "PLMN identifier")
-	logLevel  = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
-	interval  = flag.Duration("report-interval", 30*time.Second, "Reporting interval for indications")
+	ricAddr     = flag.String("ric-addr", "127.0.0.1", "RIC address to connect to")
+	ricPort     = flag.Int("ric-port", 36421, "RIC port to connect to")
+	nodeID      = flag.String("node-id", "gnb_001", "E2 node identifier")
+	nodeType    = flag.String("node-type", "gnb", "E2 node type (gnb)")
+	plmnID      = flag.String("plmn-id", "310410", "PLMN identifier")
+	logLevel    = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	interval    = flag.Duration("report-interval", 30*time.Second, "Reporting interval for indications")
 	showVersion = flag.Bool("version", false, "Show version information")
 )
 

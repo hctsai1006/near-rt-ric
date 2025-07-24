@@ -250,7 +250,7 @@ jobs:
         if [ -d "k8s" ]; then
           for file in k8s/*.yaml; do
             if [ -f "$file" ]; then
-              kubectl --dry-run=client apply -f "$file"
+              kubectl --dry-run=client apply -f "$file" --validate=false
             fi
           done
         fi

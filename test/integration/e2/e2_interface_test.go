@@ -14,35 +14,35 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/sirupsen/logrus"
 )
 
 // E2IntegrationTestSuite contains E2 interface integration tests
 type E2IntegrationTestSuite struct {
 	suite.Suite
-	ctx             context.Context
-	cancel          context.CancelFunc
-	e2Interface     *e2.E2Interface
-	mockE2Node      *MockE2Node
+	ctx               context.Context
+	cancel            context.CancelFunc
+	e2Interface       *e2.E2Interface
+	mockE2Node        *MockE2Node
 	postgresContainer testcontainers.Container
-	dbURL           string
+	dbURL             string
 }
 
 // MockE2Node simulates an E2 node for testing
 type MockE2Node struct {
-	conn       net.Conn
-	nodeID     string
-	nodeName   string
+	conn         net.Conn
+	nodeID       string
+	nodeName     string
 	ranFunctions []e2.RANFunction
-	logger     *logrus.Logger
+	logger       *logrus.Logger
 }
 
 // SetupSuite runs before all tests
 func (suite *E2IntegrationTestSuite) SetupSuite() {
 	suite.ctx, suite.cancel = context.WithCancel(context.Background())
-	
+
 	// Setup test containers
 	suite.setupPostgres()
 	suite.setupE2Interface()
@@ -115,10 +115,10 @@ func (suite *E2IntegrationTestSuite) setupE2Interface() {
 			},
 		},
 		Database: config.DatabaseConfig{
-			URL:               suite.dbURL,
-			MaxConnections:    10,
+			URL:                suite.dbURL,
+			MaxConnections:     10,
 			MaxIdleConnections: 5,
-			ConnTimeout:       30 * time.Second,
+			ConnTimeout:        30 * time.Second,
 		},
 		ASN1: config.ASN1Config{
 			Version:    "v3.0",
@@ -148,18 +148,18 @@ func (suite *E2IntegrationTestSuite) setupMockE2Node() {
 		nodeName: "test-gnb-001",
 		ranFunctions: []e2.RANFunction{
 			{
-				FunctionID:   1,
-				Name:         "RAN Control",
-				Version:      "1.0",
-				OID:          "1.3.6.1.4.1.1.22.1.1",
-				Description:  "RAN Control Function",
+				FunctionID:  1,
+				Name:        "RAN Control",
+				Version:     "1.0",
+				OID:         "1.3.6.1.4.1.1.22.1.1",
+				Description: "RAN Control Function",
 			},
 			{
-				FunctionID:   2,
-				Name:         "Key Performance Measurement",
-				Version:      "1.0",
-				OID:          "1.3.6.1.4.1.1.22.1.2",
-				Description:  "KPM Function",
+				FunctionID:  2,
+				Name:        "Key Performance Measurement",
+				Version:     "1.0",
+				OID:         "1.3.6.1.4.1.1.22.1.2",
+				Description: "KPM Function",
 			},
 		},
 		logger: logger,
@@ -253,10 +253,10 @@ func (suite *E2IntegrationTestSuite) TestRICControl() {
 			RequestorID: 1001,
 			InstanceID:  2,
 		},
-		RANFunctionID: 1,
-		CallProcessID: []byte("control-001"),
-		ControlHeader: []byte("test-control-header"),
-		ControlMessage: []byte("test-control-message"),
+		RANFunctionID:     1,
+		CallProcessID:     []byte("control-001"),
+		ControlHeader:     []byte("test-control-header"),
+		ControlMessage:    []byte("test-control-message"),
 		ControlAckRequest: e2.ControlAckRequestACK,
 	}
 
@@ -369,7 +369,7 @@ func (suite *E2IntegrationTestSuite) TestE2Performance() {
 	duration := time.Since(start)
 
 	// Performance assertions
-	assert.Less(suite.T(), errors, numRequests/10) // Less than 10% error rate
+	assert.Less(suite.T(), errors, numRequests/10)   // Less than 10% error rate
 	assert.Less(suite.T(), duration, 30*time.Second) // Complete within 30 seconds
 
 	suite.T().Logf("Performance test: %d requests in %v, %d errors", numRequests, duration, errors)
@@ -396,7 +396,7 @@ func (m *MockE2Node) SendE2SetupRequest(req *e2.E2SetupRequest) error {
 func (m *MockE2Node) WaitForE2SetupResponse(timeout time.Duration) (*e2.E2SetupResponse, error) {
 	// Set read timeout
 	m.conn.SetReadDeadline(time.Now().Add(timeout))
-	
+
 	buffer := make([]byte, 4096)
 	n, err := m.conn.Read(buffer)
 	if err != nil {

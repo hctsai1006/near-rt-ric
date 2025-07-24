@@ -19,11 +19,11 @@ type RPCResponse struct {
 
 // RPCError represents a NETCONF RPC error
 type RPCError struct {
-	XMLName xml.Name `xml:"rpc-error"`
-	ErrorType string `xml:"error-type"`
-	ErrorTag string `xml:"error-tag"`
-	ErrorSeverity string `xml:"error-severity"`
-	ErrorMessage string `xml:"error-message"`
+	XMLName       xml.Name `xml:"rpc-error"`
+	ErrorType     string   `xml:"error-type"`
+	ErrorTag      string   `xml:"error-tag"`
+	ErrorSeverity string   `xml:"error-severity"`
+	ErrorMessage  string   `xml:"error-message"`
 }
 
 // HelloMessage represents a NETCONF hello message

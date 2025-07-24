@@ -19,11 +19,11 @@ const (
 )
 
 var (
-	listenAddr = flag.String("listen-addr", "0.0.0.0", "Listen address for E2 interface")
-	listenPort = flag.Int("listen-port", 36421, "Listen port for E2 interface")
-	maxNodes   = flag.Int("max-nodes", 100, "Maximum number of E2 nodes")
-	logLevel   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
-	configFile = flag.String("config", "", "Configuration file path")
+	listenAddr  = flag.String("listen-addr", "0.0.0.0", "Listen address for E2 interface")
+	listenPort  = flag.Int("listen-port", 36421, "Listen port for E2 interface")
+	maxNodes    = flag.Int("max-nodes", 100, "Maximum number of E2 nodes")
+	logLevel    = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	configFile  = flag.String("config", "", "Configuration file path")
 	showVersion = flag.Bool("version", false, "Show version information")
 )
 
@@ -48,16 +48,16 @@ func main() {
 	})
 
 	logger.WithFields(logrus.Fields{
-		"version": version,
+		"version":     version,
 		"listen_addr": *listenAddr,
 		"listen_port": *listenPort,
-		"max_nodes": *maxNodes,
+		"max_nodes":   *maxNodes,
 	}).Info("Starting O-RAN Near-RT RIC")
 
 	// Create and start E2 interface
 	addr := fmt.Sprintf("%s:%d", *listenAddr, *listenPort)
 	e2Interface := e2.NewE2Interface(addr)
-	
+
 	if err := e2Interface.Start(); err != nil {
 		logger.WithError(err).Fatal("Failed to start E2 interface")
 	}

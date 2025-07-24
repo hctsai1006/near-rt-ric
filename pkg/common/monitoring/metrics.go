@@ -10,11 +10,11 @@ import (
 
 // MetricsCollector handles Prometheus metrics collection
 type MetricsCollector struct {
-	namespace string
-	subsystem string
-	A1Metrics *A1Metrics
+	namespace   string
+	subsystem   string
+	A1Metrics   *A1Metrics
 	XAppMetrics *XAppMetrics
-	O1Metrics *O1Metrics
+	O1Metrics   *O1Metrics
 }
 
 // A1Metrics contains all Prometheus metrics for the A1 interface
@@ -28,22 +28,22 @@ type A1Metrics struct {
 
 // XAppMetrics contains all Prometheus metrics for the xApp framework
 type XAppMetrics struct {
-	XAppsTotal           *prometheus.GaugeVec
-	InstancesTotal       prometheus.Gauge
-	InstancesActive      prometheus.Gauge
-	InstancesStopped     prometheus.Gauge
-	InstancesFailed      prometheus.Gauge
-	DeploymentSuccess    prometheus.Counter
-	DeploymentErrors     prometheus.Counter
-	HealthChecksTotal    *prometheus.CounterVec
+	XAppsTotal        *prometheus.GaugeVec
+	InstancesTotal    prometheus.Gauge
+	InstancesActive   prometheus.Gauge
+	InstancesStopped  prometheus.Gauge
+	InstancesFailed   prometheus.Gauge
+	DeploymentSuccess prometheus.Counter
+	DeploymentErrors  prometheus.Counter
+	HealthChecksTotal *prometheus.CounterVec
 }
 
 // O1Metrics contains all Prometheus metrics for the O1 interface
 type O1Metrics struct {
-	NetconfSessions     prometheus.Gauge
-	NetconfMessages     prometheus.Counter
-	NetconfOperations   *prometheus.CounterVec
-	AlarmsTotal         *prometheus.CounterVec
+	NetconfSessions         prometheus.Gauge
+	NetconfMessages         prometheus.Counter
+	NetconfOperations       *prometheus.CounterVec
+	AlarmsTotal             *prometheus.CounterVec
 	PerformanceMetricsTotal *prometheus.CounterVec
 }
 

@@ -22,4 +22,3 @@ func (a *API) Control(message string) error {
 	fmt.Printf("xApp sent control message: %s\n", message)
 	return nil
 }
-

@@ -14,7 +14,7 @@ import (
 type KubernetesDeploymentEngine struct {
 	logger    *logrus.Entry
 	namespace string
-	
+
 	// Kubernetes client would be here in production
 	// kubeClient kubernetes.Interface
 }
@@ -161,12 +161,12 @@ func (kde *KubernetesDeploymentEngine) GetMetrics(ctx context.Context, instanceI
 			Drops:           0,
 		},
 		Storage: StorageMetrics{
-			Used:      100 * 1024 * 1024, // 100MB
-			Available: 900 * 1024 * 1024, // 900MB
-			Total:     1024 * 1024 * 1024, // 1GB
-			ReadOps:   100,
-			WriteOps:  50,
-			ReadBytes: 10 * 1024 * 1024,
+			Used:       100 * 1024 * 1024,  // 100MB
+			Available:  900 * 1024 * 1024,  // 900MB
+			Total:      1024 * 1024 * 1024, // 1GB
+			ReadOps:    100,
+			WriteOps:   50,
+			ReadBytes:  10 * 1024 * 1024,
 			WriteBytes: 5 * 1024 * 1024,
 		},
 		LastUpdated: time.Now(),
@@ -208,7 +208,7 @@ func (kde *KubernetesDeploymentEngine) PerformHealthCheck(ctx context.Context, i
 // DockerDeploymentEngine implements deployment engine for Docker
 type DockerDeploymentEngine struct {
 	logger *logrus.Entry
-	
+
 	// Docker client would be here in production
 	// dockerClient *docker.Client
 }
@@ -345,12 +345,12 @@ func (dde *DockerDeploymentEngine) GetMetrics(ctx context.Context, instanceID XA
 			Drops:           0,
 		},
 		Storage: StorageMetrics{
-			Used:      200 * 1024 * 1024, // 200MB
-			Available: 800 * 1024 * 1024, // 800MB
-			Total:     1024 * 1024 * 1024, // 1GB
-			ReadOps:   200,
-			WriteOps:  100,
-			ReadBytes: 20 * 1024 * 1024,
+			Used:       200 * 1024 * 1024,  // 200MB
+			Available:  800 * 1024 * 1024,  // 800MB
+			Total:      1024 * 1024 * 1024, // 1GB
+			ReadOps:    200,
+			WriteOps:   100,
+			ReadBytes:  20 * 1024 * 1024,
 			WriteBytes: 10 * 1024 * 1024,
 		},
 		LastUpdated: time.Now(),
@@ -392,7 +392,7 @@ func (dde *DockerDeploymentEngine) PerformHealthCheck(ctx context.Context, insta
 // MockDeploymentEngine implements a mock deployment engine for testing
 type MockDeploymentEngine struct {
 	logger *logrus.Entry
-	
+
 	// Mock state
 	deployedInstances map[XAppInstanceID]*XAppInstance
 	deployFailure     bool

@@ -12,15 +12,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/sirupsen/logrus"
 )
 
 // E2PerformanceTest measures E2 interface performance under load
 func TestE2InterfacePerformance(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Setup test database
 	postgresContainer := setupTestPostgres(t, ctx)
 	defer postgresContainer.Terminate(ctx)
@@ -96,7 +96,7 @@ func TestE2InterfacePerformance(t *testing.T) {
 // BenchmarkE2SetupProcedure measures E2 Setup procedure performance
 func BenchmarkE2SetupProcedure(b *testing.B) {
 	ctx := context.Background()
-	
+
 	// Setup minimal E2 interface for benchmarking
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
@@ -145,7 +145,7 @@ func BenchmarkE2SetupProcedure(b *testing.B) {
 // BenchmarkRICSubscription measures RIC Subscription procedure performance
 func BenchmarkRICSubscription(b *testing.B) {
 	ctx := context.Background()
-	
+
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
 	metrics := monitoring.NewMetricsCollector()
@@ -205,7 +205,7 @@ func testE2SetupPerformance(t *testing.T, e2Interface *e2.E2Interface, numNodes,
 	ctx := context.Background()
 	semaphore := make(chan struct{}, concurrentNodes)
 	var wg sync.WaitGroup
-	
+
 	start := time.Now()
 	errors := 0
 	var errorsMutex sync.Mutex
@@ -214,7 +214,7 @@ func testE2SetupPerformance(t *testing.T, e2Interface *e2.E2Interface, numNodes,
 		wg.Add(1)
 		go func(nodeIndex int) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire semaphore
+			semaphore <- struct{}{}        // Acquire semaphore
 			defer func() { <-semaphore }() // Release semaphore
 
 			nodeID := fmt.Sprintf("perf-node-%03d", nodeIndex)
@@ -267,7 +267,7 @@ func testE2SetupPerformance(t *testing.T, e2Interface *e2.E2Interface, numNodes,
 
 func testRICSubscriptionPerformance(t *testing.T, e2Interface *e2.E2Interface, numNodes, requestsPerNode, concurrentNodes int) {
 	ctx := context.Background()
-	
+
 	// First setup all nodes
 	for i := 0; i < numNodes; i++ {
 		nodeID := fmt.Sprintf("sub-node-%03d", i)
@@ -286,7 +286,7 @@ func testRICSubscriptionPerformance(t *testing.T, e2Interface *e2.E2Interface, n
 
 	semaphore := make(chan struct{}, concurrentNodes)
 	var wg sync.WaitGroup
-	
+
 	start := time.Now()
 	totalRequests := numNodes * requestsPerNode
 	errors := 0
@@ -346,11 +346,11 @@ func testRICSubscriptionPerformance(t *testing.T, e2Interface *e2.E2Interface, n
 
 func testRICControlPerformance(t *testing.T, e2Interface *e2.E2Interface, numNodes, requestsPerNode, concurrentNodes int) {
 	ctx := context.Background()
-	
+
 	// Setup nodes and subscriptions first
 	for i := 0; i < numNodes; i++ {
 		nodeID := fmt.Sprintf("ctrl-node-%03d", i)
-		
+
 		// Setup node
 		setupReq := &e2.E2SetupRequest{
 			TransactionID: uint32(i + 1),
@@ -367,7 +367,7 @@ func testRICControlPerformance(t *testing.T, e2Interface *e2.E2Interface, numNod
 
 	semaphore := make(chan struct{}, concurrentNodes)
 	var wg sync.WaitGroup
-	
+
 	start := time.Now()
 	totalRequests := numNodes * requestsPerNode
 	errors := 0
@@ -421,7 +421,7 @@ func testRICControlPerformance(t *testing.T, e2Interface *e2.E2Interface, numNod
 
 func testE2Latency(t *testing.T, e2Interface *e2.E2Interface, numSamples int) {
 	ctx := context.Background()
-	
+
 	// Setup a test node
 	nodeID := "latency-test-node"
 	setupReq := &e2.E2SetupRequest{
@@ -441,7 +441,7 @@ func testE2Latency(t *testing.T, e2Interface *e2.E2Interface, numSamples int) {
 
 	for i := 0; i < numSamples; i++ {
 		start := time.Now()
-		
+
 		subscriptionReq := &e2.RICSubscriptionRequest{
 			TransactionID: uint32(i + 1),
 			RequestID: e2.RICRequestID{
@@ -459,7 +459,7 @@ func testE2Latency(t *testing.T, e2Interface *e2.E2Interface, numSamples int) {
 		}
 
 		err := e2Interface.ProcessRICSubscriptionRequest(ctx, nodeID, subscriptionReq)
-		
+
 		latency := time.Since(start)
 		if err == nil {
 			latencies = append(latencies, latency)
@@ -491,7 +491,7 @@ func testE2Latency(t *testing.T, e2Interface *e2.E2Interface, numSamples int) {
 		// Sort latencies for percentile calculation would be more accurate
 		p95Index := int(0.95 * float64(len(latencies)))
 		p99Index := int(0.99 * float64(len(latencies)))
-		
+
 		if p95Index >= len(latencies) {
 			p95Index = len(latencies) - 1
 		}
@@ -515,7 +515,7 @@ func testE2Latency(t *testing.T, e2Interface *e2.E2Interface, numSamples int) {
 
 func testE2Throughput(t *testing.T, e2Interface *e2.E2Interface, duration time.Duration) {
 	ctx := context.Background()
-	
+
 	// Setup test nodes
 	numNodes := 10
 	for i := 0; i < numNodes; i++ {
@@ -545,11 +545,11 @@ func testE2Throughput(t *testing.T, e2Interface *e2.E2Interface, duration time.D
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			
+
 			requestCounter := 0
 			for time.Now().Before(endTime) {
 				nodeID := fmt.Sprintf("throughput-node-%02d", requestCounter%numNodes)
-				
+
 				subscriptionReq := &e2.RICSubscriptionRequest{
 					TransactionID: uint32(workerID*10000 + requestCounter),
 					RequestID: e2.RICRequestID{
@@ -574,7 +574,7 @@ func testE2Throughput(t *testing.T, e2Interface *e2.E2Interface, duration time.D
 				}
 
 				requestCounter++
-				
+
 				// Small delay to prevent overwhelming
 				time.Sleep(10 * time.Millisecond)
 			}

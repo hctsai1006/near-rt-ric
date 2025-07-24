@@ -35,15 +35,15 @@ type Connection struct {
 
 // Config represents database configuration
 type Config struct {
-	Connection   Connection
-	MaxConns     int
-	MinConns     int
-	MaxIdleTime  time.Duration
-	MaxLifetime  time.Duration
-	SSLMode      string
-	SSLCert      string
-	SSLKey       string
-	SSLRootCert  string
+	Connection  Connection
+	MaxConns    int
+	MinConns    int
+	MaxIdleTime time.Duration
+	MaxLifetime time.Duration
+	SSLMode     string
+	SSLCert     string
+	SSLKey      string
+	SSLRootCert string
 }
 
 // MockDatabase provides a mock implementation for testing

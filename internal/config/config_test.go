@@ -252,11 +252,11 @@ func TestConfigValidation(t *testing.T) {
 func TestEnvironmentVariableOverrides(t *testing.T) {
 	// Test environment variable overrides
 	originalValues := map[string]string{
-		"LOG_LEVEL":    os.Getenv("LOG_LEVEL"),
-		"HTTP_PORT":    os.Getenv("HTTP_PORT"),
-		"DB_HOST":      os.Getenv("DB_HOST"),
-		"DB_PORT":      os.Getenv("DB_PORT"),
-		"REDIS_ADDR":   os.Getenv("REDIS_ADDR"),
+		"LOG_LEVEL":  os.Getenv("LOG_LEVEL"),
+		"HTTP_PORT":  os.Getenv("HTTP_PORT"),
+		"DB_HOST":    os.Getenv("DB_HOST"),
+		"DB_PORT":    os.Getenv("DB_PORT"),
+		"REDIS_ADDR": os.Getenv("REDIS_ADDR"),
 	}
 
 	// Set test environment variables
@@ -279,7 +279,7 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 
 	t.Run("Environment variables override defaults", func(t *testing.T) {
 		cfg := LoadDefaultConfig()
-		
+
 		// Apply environment variable overrides
 		cfg.applyEnvironmentOverrides()
 
@@ -472,7 +472,7 @@ func BenchmarkLoadDefaultConfig(b *testing.B) {
 
 func BenchmarkConfigValidation(b *testing.B) {
 	cfg := LoadDefaultConfig()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		err := cfg.Validate()
@@ -484,7 +484,7 @@ func BenchmarkConfigValidation(b *testing.B) {
 
 func BenchmarkConfigSerialization(b *testing.B) {
 	cfg := LoadDefaultConfig()
-	
+
 	b.Run("ToJSON", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_, err := cfg.ToJSON()
@@ -493,7 +493,7 @@ func BenchmarkConfigSerialization(b *testing.B) {
 			}
 		}
 	})
-	
+
 	b.Run("ToYAML", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_, err := cfg.ToYAML()

@@ -25,11 +25,11 @@ type HealthMonitor struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	
+
 	// Health check history
-	healthHistory    map[XAppInstanceID][]HealthCheckResult
-	historyMutex     sync.RWMutex
-	
+	healthHistory map[XAppInstanceID][]HealthCheckResult
+	historyMutex  sync.RWMutex
+
 	// Event handlers
 	eventHandlers []HealthEventHandler
 }
@@ -190,9 +190,9 @@ func (hm *HealthMonitor) GetHealthHistory(instanceID XAppInstanceID, limit int) 
 // GetOverallHealth returns overall health status for all instances
 func (hm *HealthMonitor) GetOverallHealth() map[string]interface{} {
 	instances := hm.lifecycleManager.ListInstances()
-	
+
 	var healthyCount, unhealthyCount, unknownCount, degradedCount int
-	
+
 	for _, instance := range instances {
 		switch instance.HealthStatus.Overall {
 		case HealthStateHealthy:
@@ -213,13 +213,13 @@ func (hm *HealthMonitor) GetOverallHealth() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"total_instances":    totalInstances,
-		"healthy_instances":  healthyCount,
+		"total_instances":     totalInstances,
+		"healthy_instances":   healthyCount,
 		"unhealthy_instances": unhealthyCount,
-		"degraded_instances": degradedCount,
-		"unknown_instances":  unknownCount,
-		"health_percentage":  healthPercentage,
-		"overall_status":     hm.determineOverallStatus(healthyCount, unhealthyCount, degradedCount, unknownCount),
+		"degraded_instances":  degradedCount,
+		"unknown_instances":   unknownCount,
+		"health_percentage":   healthPercentage,
+		"overall_status":      hm.determineOverallStatus(healthyCount, unhealthyCount, degradedCount, unknownCount),
 	}
 }
 
@@ -265,7 +265,7 @@ func (hm *HealthMonitor) performHealthChecks() {
 			result, err := hm.PerformHealthCheck(instanceID)
 			if err != nil {
 				hm.logger.WithError(err).WithField("instance_id", instanceID).Error("Health check failed")
-				
+
 				// Handle consecutive failures
 				hm.handleHealthCheckFailure(instanceID, err)
 			} else {
@@ -294,14 +294,14 @@ func (hm *HealthMonitor) updateInstanceHealth(instanceID XAppInstanceID, healthS
 	if storedInstance, exists := hm.lifecycleManager.instances[instanceID]; exists {
 		storedInstance.HealthStatus = *healthStatus
 		storedInstance.HealthStatus.LastHealthCheck = result.Timestamp
-		
+
 		// Add to health history
 		if len(storedInstance.HealthStatus.HealthHistory) >= 100 {
 			// Keep only last 99 entries
 			storedInstance.HealthStatus.HealthHistory = storedInstance.HealthStatus.HealthHistory[1:]
 		}
 		storedInstance.HealthStatus.HealthHistory = append(storedInstance.HealthStatus.HealthHistory, *result)
-		
+
 		storedInstance.UpdatedAt = time.Now()
 	}
 	hm.lifecycleManager.xappsMutex.Unlock()
@@ -324,12 +324,12 @@ func (hm *HealthMonitor) recordHealthCheck(instanceID XAppInstanceID, result *He
 	defer hm.historyMutex.Unlock()
 
 	history := hm.healthHistory[instanceID]
-	
+
 	// Keep only last 100 entries
 	if len(history) >= 100 {
 		history = history[1:]
 	}
-	
+
 	history = append(history, *result)
 	hm.healthHistory[instanceID] = history
 }
@@ -337,7 +337,7 @@ func (hm *HealthMonitor) recordHealthCheck(instanceID XAppInstanceID, result *He
 func (hm *HealthMonitor) handleHealthCheckFailure(instanceID XAppInstanceID, err error) {
 	// Get failure count from history
 	history := hm.GetHealthHistory(instanceID, hm.failureThreshold)
-	
+
 	failureCount := 0
 	for _, check := range history {
 		if check.State == HealthStateUnhealthy {
@@ -348,9 +348,9 @@ func (hm *HealthMonitor) handleHealthCheckFailure(instanceID XAppInstanceID, err
 	// If we've exceeded the failure threshold, mark instance as failed
 	if failureCount >= hm.failureThreshold {
 		hm.logger.WithFields(logrus.Fields{
-			"instance_id":     instanceID,
-			"failure_count":   failureCount,
-			"threshold":       hm.failureThreshold,
+			"instance_id":   instanceID,
+			"failure_count": failureCount,
+			"threshold":     hm.failureThreshold,
 		}).Error("Instance exceeded health check failure threshold")
 
 		// Update instance status to failed
@@ -369,26 +369,26 @@ func (hm *HealthMonitor) handleHealthCheckFailure(instanceID XAppInstanceID, err
 
 func (hm *HealthMonitor) determineOverallStatus(healthy, unhealthy, degraded, unknown int) string {
 	total := healthy + unhealthy + degraded + unknown
-	
+
 	if total == 0 {
 		return "unknown"
 	}
-	
+
 	// If more than 50% are healthy, overall is healthy
 	if float64(healthy)/float64(total) > 0.5 {
 		return "healthy"
 	}
-	
+
 	// If any are unhealthy, overall is unhealthy
 	if unhealthy > 0 {
 		return "unhealthy"
 	}
-	
+
 	// If any are degraded, overall is degraded
 	if degraded > 0 {
 		return "degraded"
 	}
-	
+
 	return "unknown"
 }
 
@@ -422,10 +422,10 @@ func (hm *HealthMonitor) AddEventHandler(handler HealthEventHandler) {
 // GetHealthStats returns health monitoring statistics
 func (hm *HealthMonitor) GetHealthStats() map[string]interface{} {
 	return map[string]interface{}{
-		"check_interval":     hm.checkInterval,
-		"check_timeout":      hm.checkTimeout,
-		"failure_threshold":  hm.failureThreshold,
-		"overall_health":     hm.GetOverallHealth(),
-		"total_checks":       len(hm.healthHistory),
+		"check_interval":    hm.checkInterval,
+		"check_timeout":     hm.checkTimeout,
+		"failure_threshold": hm.failureThreshold,
+		"overall_health":    hm.GetOverallHealth(),
+		"total_checks":      len(hm.healthHistory),
 	}
 }

@@ -3,8 +3,8 @@ package e2
 import (
 	"fmt"
 
-	"github.com/onosproject/onos-lib-go/pkg/asn1/aper"
 	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
+	"github.com/onosproject/onos-lib-go/pkg/asn1/aper"
 )
 
 // Codec defines the interface for ASN.1 encoding/decoding.
@@ -30,8 +30,6 @@ func (c *ASN1DERCodec) Encode(val interface{}) ([]byte, error) {
 func (c *ASN1DERCodec) Decode(data []byte, val interface{}) error {
 	return aper.Unmarshal(data, val, nil, nil)
 }
-
-
 
 // EncodeE2SetupRequest encodes an E2SetupRequest into a APER-encoded E2AP_PDU.
 func EncodeE2SetupRequest(req *models.E2SetupRequest) ([]byte, error) {

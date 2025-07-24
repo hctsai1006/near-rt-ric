@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-
-
 // Notification represents an O1 notification
 type Notification struct {
 	EventTime time.Time
@@ -38,23 +36,23 @@ const (
 type NetconfOperation string
 
 const (
-	NetconfGet       NetconfOperation = "get"
-	NetconfGetConfig NetconfOperation = "get-config"
-	NetconfEditConfig NetconfOperation = "edit-config"
-	NetconfCopyConfig NetconfOperation = "copy-config"
+	NetconfGet          NetconfOperation = "get"
+	NetconfGetConfig    NetconfOperation = "get-config"
+	NetconfEditConfig   NetconfOperation = "edit-config"
+	NetconfCopyConfig   NetconfOperation = "copy-config"
 	NetconfDeleteConfig NetconfOperation = "delete-config"
-	NetconfLock       NetconfOperation = "lock"
-	NetconfUnlock     NetconfOperation = "unlock"
+	NetconfLock         NetconfOperation = "lock"
+	NetconfUnlock       NetconfOperation = "unlock"
 	NetconfCloseSession NetconfOperation = "close-session"
-	NetconfKillSession NetconfOperation = "kill-session"
+	NetconfKillSession  NetconfOperation = "kill-session"
 )
 
 // YANG model identification
 type YANGModel struct {
-	Name      string `xml:"name" json:"name"`
-	Namespace string `xml:"namespace" json:"namespace"`
-	Version   string `xml:"version" json:"version"`
-	Revision  string `xml:"revision" json:"revision"`
+	Name      string   `xml:"name" json:"name"`
+	Namespace string   `xml:"namespace" json:"namespace"`
+	Version   string   `xml:"version" json:"version"`
+	Revision  string   `xml:"revision" json:"revision"`
 	Features  []string `xml:"feature" json:"features,omitempty"`
 }
 
@@ -68,15 +66,15 @@ type NetconfCapability struct {
 
 // NETCONF session information
 type NetconfSession struct {
-	SessionID    uint32              `xml:"session-id" json:"session_id"`
-	Username     string              `xml:"username" json:"username"`
-	SourceHost   string              `xml:"source-host" json:"source_host"`
-	LoginTime    time.Time           `xml:"login-time" json:"login_time"`
-	InRPCs       uint64              `xml:"in-rpcs" json:"in_rpcs"`
-	InBadRPCs    uint64              `xml:"in-bad-rpcs" json:"in_bad_rpcs"`
-	OutRPCErrors uint64              `xml:"out-rpc-errors" json:"out_rpc_errors"`
-	OutNotifications uint64          `xml:"out-notifications" json:"out_notifications"`
-	Capabilities []NetconfCapability `xml:"capabilities>capability" json:"capabilities"`
+	SessionID        uint32              `xml:"session-id" json:"session_id"`
+	Username         string              `xml:"username" json:"username"`
+	SourceHost       string              `xml:"source-host" json:"source_host"`
+	LoginTime        time.Time           `xml:"login-time" json:"login_time"`
+	InRPCs           uint64              `xml:"in-rpcs" json:"in_rpcs"`
+	InBadRPCs        uint64              `xml:"in-bad-rpcs" json:"in_bad_rpcs"`
+	OutRPCErrors     uint64              `xml:"out-rpc-errors" json:"out_rpc_errors"`
+	OutNotifications uint64              `xml:"out-notifications" json:"out_notifications"`
+	Capabilities     []NetconfCapability `xml:"capabilities>capability" json:"capabilities"`
 }
 
 // NETCONF datastore types
@@ -97,39 +95,39 @@ type NetconfRPC struct {
 
 // NETCONF RPC Reply structure
 type NetconfRPCReply struct {
-	XMLName   xml.Name `xml:"rpc-reply"`
-	MessageID string   `xml:"message-id,attr"`
-	Data      interface{} `xml:"data,omitempty"`
-	OK        *struct{}   `xml:"ok,omitempty"`
+	XMLName   xml.Name         `xml:"rpc-reply"`
+	MessageID string           `xml:"message-id,attr"`
+	Data      interface{}      `xml:"data,omitempty"`
+	OK        *struct{}        `xml:"ok,omitempty"`
 	Error     *NetconfRPCError `xml:"rpc-error,omitempty"`
 }
 
 // NETCONF RPC Error structure
 type NetconfRPCError struct {
-	Type         string `xml:"error-type"`
-	Tag          string `xml:"error-tag"`
-	Severity     string `xml:"error-severity"`
-	AppTag       string `xml:"error-app-tag,omitempty"`
-	Path         string `xml:"error-path,omitempty"`
-	Message      string `xml:"error-message,omitempty"`
-	Info         string `xml:"error-info,omitempty"`
+	Type     string `xml:"error-type"`
+	Tag      string `xml:"error-tag"`
+	Severity string `xml:"error-severity"`
+	AppTag   string `xml:"error-app-tag,omitempty"`
+	Path     string `xml:"error-path,omitempty"`
+	Message  string `xml:"error-message,omitempty"`
+	Info     string `xml:"error-info,omitempty"`
 }
 
 // Configuration management structures
 
 // ConfigurationChange represents a configuration change event
 type ConfigurationChange struct {
-	ChangeID      string                 `json:"change_id"`
-	SessionID     uint32                 `json:"session_id"`
-	Username      string                 `json:"username"`
-	Timestamp     time.Time              `json:"timestamp"`
-	Operation     NetconfOperation       `json:"operation"`
-	Datastore     DatastoreType          `json:"datastore"`
-	Target        string                 `json:"target"`
-	Changes       []ConfigurationItem    `json:"changes"`
-	Status        string                 `json:"status"`
-	ErrorMessage  string                 `json:"error_message,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	ChangeID     string                 `json:"change_id"`
+	SessionID    uint32                 `json:"session_id"`
+	Username     string                 `json:"username"`
+	Timestamp    time.Time              `json:"timestamp"`
+	Operation    NetconfOperation       `json:"operation"`
+	Datastore    DatastoreType          `json:"datastore"`
+	Target       string                 `json:"target"`
+	Changes      []ConfigurationItem    `json:"changes"`
+	Status       string                 `json:"status"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ConfigurationItem represents a single configuration item
@@ -156,9 +154,9 @@ const (
 type AlarmStatus string
 
 const (
-	AlarmActive      AlarmStatus = "active"
+	AlarmActive       AlarmStatus = "active"
 	AlarmAcknowledged AlarmStatus = "acknowledged"
-	AlarmCleared     AlarmStatus = "cleared"
+	AlarmCleared      AlarmStatus = "cleared"
 )
 
 // Alarm represents a fault alarm
@@ -183,46 +181,46 @@ type Alarm struct {
 
 // PerformanceMetric represents a performance measurement
 type PerformanceMetric struct {
-	MetricID        string                 `json:"metric_id"`
-	MetricName      string                 `json:"metric_name"`
-	ManagedObject   string                 `json:"managed_object"`
-	MetricType      string                 `json:"metric_type"` // counter, gauge, histogram
-	Value           interface{}            `json:"value"`
-	Unit            string                 `json:"unit,omitempty"`
-	Timestamp       time.Time              `json:"timestamp"`
-	CollectionTime  time.Time              `json:"collection_time"`
-	Granularity     time.Duration          `json:"granularity"`
-	Labels          map[string]string      `json:"labels,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	MetricID       string                 `json:"metric_id"`
+	MetricName     string                 `json:"metric_name"`
+	ManagedObject  string                 `json:"managed_object"`
+	MetricType     string                 `json:"metric_type"` // counter, gauge, histogram
+	Value          interface{}            `json:"value"`
+	Unit           string                 `json:"unit,omitempty"`
+	Timestamp      time.Time              `json:"timestamp"`
+	CollectionTime time.Time              `json:"collection_time"`
+	Granularity    time.Duration          `json:"granularity"`
+	Labels         map[string]string      `json:"labels,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // PerformanceReport represents a collection of performance metrics
 type PerformanceReport struct {
-	ReportID       string               `json:"report_id"`
-	ManagedObject  string               `json:"managed_object"`
-	ReportType     string               `json:"report_type"`
-	StartTime      time.Time            `json:"start_time"`
-	EndTime        time.Time            `json:"end_time"`
-	Granularity    time.Duration        `json:"granularity"`
-	Metrics        []PerformanceMetric  `json:"metrics"`
-	GeneratedTime  time.Time            `json:"generated_time"`
-	ReportedBy     string               `json:"reported_by"`
+	ReportID      string              `json:"report_id"`
+	ManagedObject string              `json:"managed_object"`
+	ReportType    string              `json:"report_type"`
+	StartTime     time.Time           `json:"start_time"`
+	EndTime       time.Time           `json:"end_time"`
+	Granularity   time.Duration       `json:"granularity"`
+	Metrics       []PerformanceMetric `json:"metrics"`
+	GeneratedTime time.Time           `json:"generated_time"`
+	ReportedBy    string              `json:"reported_by"`
 }
 
 // Software management structures
 
 // SoftwareVersion represents software version information
 type SoftwareVersion struct {
-	Name           string            `json:"name"`
-	Version        string            `json:"version"`
-	BuildNumber    string            `json:"build_number,omitempty"`
-	BuildDate      time.Time         `json:"build_date,omitempty"`
-	Vendor         string            `json:"vendor,omitempty"`
-	Description    string            `json:"description,omitempty"`
-	InstallDate    time.Time         `json:"install_date,omitempty"`
-	Status         string            `json:"status"` // active, inactive, corrupted
-	Dependencies   []string          `json:"dependencies,omitempty"`
-	Checksums      map[string]string `json:"checksums,omitempty"`
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+	BuildNumber  string            `json:"build_number,omitempty"`
+	BuildDate    time.Time         `json:"build_date,omitempty"`
+	Vendor       string            `json:"vendor,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	InstallDate  time.Time         `json:"install_date,omitempty"`
+	Status       string            `json:"status"` // active, inactive, corrupted
+	Dependencies []string          `json:"dependencies,omitempty"`
+	Checksums    map[string]string `json:"checksums,omitempty"`
 }
 
 // SoftwareInventory represents software inventory
@@ -234,35 +232,35 @@ type SoftwareInventory struct {
 
 // FileTransfer represents file transfer operations
 type FileTransfer struct {
-	TransferID    string                 `json:"transfer_id"`
-	Operation     string                 `json:"operation"` // upload, download
-	LocalPath     string                 `json:"local_path"`
-	RemotePath    string                 `json:"remote_path"`
-	Protocol      string                 `json:"protocol"` // sftp, scp, http, https
-	Status        string                 `json:"status"` // pending, active, completed, failed
-	Progress      float64                `json:"progress"` // 0.0 to 1.0
-	StartTime     time.Time              `json:"start_time"`
-	EndTime       *time.Time             `json:"end_time,omitempty"`
-	Size          int64                  `json:"size,omitempty"`
-	Checksum      string                 `json:"checksum,omitempty"`
-	ErrorMessage  string                 `json:"error_message,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	TransferID   string                 `json:"transfer_id"`
+	Operation    string                 `json:"operation"` // upload, download
+	LocalPath    string                 `json:"local_path"`
+	RemotePath   string                 `json:"remote_path"`
+	Protocol     string                 `json:"protocol"` // sftp, scp, http, https
+	Status       string                 `json:"status"`   // pending, active, completed, failed
+	Progress     float64                `json:"progress"` // 0.0 to 1.0
+	StartTime    time.Time              `json:"start_time"`
+	EndTime      *time.Time             `json:"end_time,omitempty"`
+	Size         int64                  `json:"size,omitempty"`
+	Checksum     string                 `json:"checksum,omitempty"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Security management structures
 
 // SecurityPolicy represents a security policy
 type SecurityPolicy struct {
-	PolicyID     string                 `json:"policy_id"`
-	PolicyName   string                 `json:"policy_name"`
-	PolicyType   string                 `json:"policy_type"`
-	Description  string                 `json:"description"`
-	Enabled      bool                   `json:"enabled"`
-	Rules        []SecurityRule         `json:"rules"`
-	CreatedTime  time.Time              `json:"created_time"`
-	UpdatedTime  time.Time              `json:"updated_time"`
-	Version      string                 `json:"version"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	PolicyID    string                 `json:"policy_id"`
+	PolicyName  string                 `json:"policy_name"`
+	PolicyType  string                 `json:"policy_type"`
+	Description string                 `json:"description"`
+	Enabled     bool                   `json:"enabled"`
+	Rules       []SecurityRule         `json:"rules"`
+	CreatedTime time.Time              `json:"created_time"`
+	UpdatedTime time.Time              `json:"updated_time"`
+	Version     string                 `json:"version"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // SecurityRule represents a security rule within a policy
@@ -340,10 +338,10 @@ const (
 	EventNetconfSessionCreated = "NETCONF_SESSION_CREATED"
 	EventNetconfSessionClosed  = "NETCONF_SESSION_CLOSED"
 	EventConfigurationChanged  = "CONFIGURATION_CHANGED"
-	EventAlarmRaised          = "ALARM_RAISED"
-	EventAlarmCleared         = "ALARM_CLEARED"
-	EventSoftwareInstalled    = "SOFTWARE_INSTALLED"
-	EventSoftwareRemoved      = "SOFTWARE_REMOVED"
+	EventAlarmRaised           = "ALARM_RAISED"
+	EventAlarmCleared          = "ALARM_CLEARED"
+	EventSoftwareInstalled     = "SOFTWARE_INSTALLED"
+	EventSoftwareRemoved       = "SOFTWARE_REMOVED"
 	EventFileTransferCompleted = "FILE_TRANSFER_COMPLETED"
 	EventSecurityPolicyUpdated = "SECURITY_POLICY_UPDATED"
 )
@@ -358,18 +356,18 @@ type GetConfigRequest struct {
 
 // EditConfigRequest represents an edit-config operation request
 type EditConfigRequest struct {
-	Datastore     DatastoreType `xml:"target>datastore" json:"datastore"`
-	DefaultOperation string     `xml:"default-operation,omitempty" json:"default_operation,omitempty"`
-	TestOption    string        `xml:"test-option,omitempty" json:"test_option,omitempty"`
-	ErrorOption   string        `xml:"error-option,omitempty" json:"error_option,omitempty"`
-	Config        string        `xml:"config" json:"config"`
+	Datastore        DatastoreType `xml:"target>datastore" json:"datastore"`
+	DefaultOperation string        `xml:"default-operation,omitempty" json:"default_operation,omitempty"`
+	TestOption       string        `xml:"test-option,omitempty" json:"test_option,omitempty"`
+	ErrorOption      string        `xml:"error-option,omitempty" json:"error_option,omitempty"`
+	Config           string        `xml:"config" json:"config"`
 }
 
 // Filter represents a NETCONF filter for get and get-config operations
 type Filter struct {
-	Type     string `xml:"type,attr,omitempty" json:"type,omitempty"`
-	Subtree  string `xml:",innerxml" json:"subtree,omitempty"`
-	XPath    string `xml:"select,attr,omitempty" json:"xpath,omitempty"`
+	Type    string `xml:"type,attr,omitempty" json:"type,omitempty"`
+	Subtree string `xml:",innerxml" json:"subtree,omitempty"`
+	XPath   string `xml:"select,attr,omitempty" json:"xpath,omitempty"`
 }
 
 // Utility methods
@@ -409,7 +407,7 @@ func (ot OperationType) IsValid() bool {
 func (no NetconfOperation) IsValid() bool {
 	switch no {
 	case NetconfGet, NetconfGetConfig, NetconfEditConfig, NetconfCopyConfig,
-		 NetconfDeleteConfig, NetconfLock, NetconfUnlock, NetconfCloseSession, NetconfKillSession:
+		NetconfDeleteConfig, NetconfLock, NetconfUnlock, NetconfCloseSession, NetconfKillSession:
 		return true
 	default:
 		return false

@@ -108,12 +108,12 @@ type A1Config struct {
 
 // AuthConfig holds authentication related configuration
 type AuthConfig struct {
-	Enabled       bool
-	PrivateKeyPath string
-	PublicKeyPath  string
-	TokenExpiry   int
-	Issuer        string
-	Audience      string
+	Enabled            bool
+	PrivateKeyPath     string
+	PublicKeyPath      string
+	TokenExpiry        int
+	Issuer             string
+	Audience           string
 	StrictIPValidation bool
 }
 
@@ -125,18 +125,18 @@ type DatabaseConfig struct {
 
 // E2Config holds all configuration for the E2 interface
 type E2Config struct {
-	ListenAddress        string
-	ListenPort           int
-	Port                 int
-	MaxNodes             int
-	MaxConnections       int
-	ConnectionTimeout    int
-	HeartbeatInterval    int
-	BufferSize           int
-	SubscriptionTimeout  int
-	LogLevel             string
-	SCTP                 SCTPConfig
-	WorkerPool           WorkerPoolConfig
+	ListenAddress       string
+	ListenPort          int
+	Port                int
+	MaxNodes            int
+	MaxConnections      int
+	ConnectionTimeout   int
+	HeartbeatInterval   int
+	BufferSize          int
+	SubscriptionTimeout int
+	LogLevel            string
+	SCTP                SCTPConfig
+	WorkerPool          WorkerPoolConfig
 }
 
 // WorkerPoolConfig holds worker pool configuration
@@ -147,10 +147,10 @@ type WorkerPoolConfig struct {
 
 // ASN1Config holds ASN.1 encoding configuration
 type ASN1Config struct {
-	EncodingType      string
-	LogLevel          string
-	Strict            bool
-	ValidateOnDecode  bool
+	EncodingType     string
+	LogLevel         string
+	Strict           bool
+	ValidateOnDecode bool
 }
 
 // SCTPConfig holds SCTP transport configuration
@@ -209,11 +209,11 @@ type FileManagementConfig struct {
 
 // SoftwareManagementConfig holds software management configuration
 type SoftwareManagementConfig struct {
-	Enabled      bool
-	PackagePath  string
-	InstallPath  string
-	BackupPath   string
-	MaxPackages  int
+	Enabled     bool
+	PackagePath string
+	InstallPath string
+	BackupPath  string
+	MaxPackages int
 }
 
 // NETCONFConfig holds NETCONF server configuration
@@ -327,12 +327,12 @@ func LoadA1Config() (*A1Config, error) {
 		TLSKeyPath:    getEnv("A1_TLS_KEY_PATH", "/certs/tls.key"),
 		LogLevel:      getEnv("A1_LOG_LEVEL", "info"),
 		Auth: AuthConfig{
-			Enabled:       getEnvAsBool("A1_AUTH_ENABLED", true),
-			PrivateKeyPath: getEnv("A1_AUTH_PRIVATE_KEY_PATH", ""),
-			PublicKeyPath:  getEnv("A1_AUTH_PUBLIC_KEY_PATH", ""),
-			TokenExpiry:   getEnvAsInt("A1_AUTH_TOKEN_EXPIRY_SEC", 3600),
-			Issuer:        getEnv("A1_AUTH_ISSUER", "near-rt-ric"),
-			Audience:      getEnv("A1_AUTH_AUDIENCE", "a1-interface"),
+			Enabled:            getEnvAsBool("A1_AUTH_ENABLED", true),
+			PrivateKeyPath:     getEnv("A1_AUTH_PRIVATE_KEY_PATH", ""),
+			PublicKeyPath:      getEnv("A1_AUTH_PUBLIC_KEY_PATH", ""),
+			TokenExpiry:        getEnvAsInt("A1_AUTH_TOKEN_EXPIRY_SEC", 3600),
+			Issuer:             getEnv("A1_AUTH_ISSUER", "near-rt-ric"),
+			Audience:           getEnv("A1_AUTH_AUDIENCE", "a1-interface"),
 			StrictIPValidation: getEnvAsBool("A1_AUTH_STRICT_IP_VALIDATION", false),
 		},
 		Database: DatabaseConfig{
@@ -353,7 +353,7 @@ func LoadE2Config() (*E2Config, error) {
 	config := &E2Config{
 		ListenAddress:       getEnv("E2_LISTEN_ADDRESS", "0.0.0.0"),
 		ListenPort:          getEnvAsInt("E2_LISTEN_PORT", 36421),
-		Port:                getEnvAsInt("E2_PORT", 36421), 
+		Port:                getEnvAsInt("E2_PORT", 36421),
 		MaxNodes:            getEnvAsInt("E2_MAX_NODES", 100),
 		MaxConnections:      getEnvAsInt("E2_MAX_CONNECTIONS", 100),
 		ConnectionTimeout:   getEnvAsInt("E2_CONNECTION_TIMEOUT", 30),
@@ -426,11 +426,11 @@ func LoadO1Config() (*O1Config, error) {
 			MaxFileSize: getEnvAsInt("O1_FILE_MANAGEMENT_MAX_FILE_SIZE_MB", 100),
 		},
 		SoftwareManagement: SoftwareManagementConfig{
-			Enabled:      getEnvAsBool("O1_SOFTWARE_MANAGEMENT_ENABLED", true),
-			PackagePath:  getEnv("O1_SOFTWARE_MANAGEMENT_PACKAGE_PATH", "/var/lib/near-rt-ric/packages"),
-			InstallPath:  getEnv("O1_SOFTWARE_MANAGEMENT_INSTALL_PATH", "/opt/near-rt-ric"),
-			BackupPath:   getEnv("O1_SOFTWARE_MANAGEMENT_BACKUP_PATH", "/var/lib/near-rt-ric/backups"),
-			MaxPackages:  getEnvAsInt("O1_SOFTWARE_MANAGEMENT_MAX_PACKAGES", 10),
+			Enabled:     getEnvAsBool("O1_SOFTWARE_MANAGEMENT_ENABLED", true),
+			PackagePath: getEnv("O1_SOFTWARE_MANAGEMENT_PACKAGE_PATH", "/var/lib/near-rt-ric/packages"),
+			InstallPath: getEnv("O1_SOFTWARE_MANAGEMENT_INSTALL_PATH", "/opt/near-rt-ric"),
+			BackupPath:  getEnv("O1_SOFTWARE_MANAGEMENT_BACKUP_PATH", "/var/lib/near-rt-ric/backups"),
+			MaxPackages: getEnvAsInt("O1_SOFTWARE_MANAGEMENT_MAX_PACKAGES", 10),
 		},
 	}
 

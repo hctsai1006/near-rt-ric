@@ -41,14 +41,14 @@ type Fields map[string]interface{}
 // NewLogger creates a new production-ready logger with O-RAN specific configuration
 func NewLogger(cfg *config.LoggingConfig) *Logger {
 	logger := logrus.New()
-	
+
 	// Configure log level
 	level, err := logrus.ParseLevel(cfg.Level)
 	if err != nil {
 		level = logrus.InfoLevel
 	}
 	logger.SetLevel(level)
-	
+
 	// Configure formatter
 	switch strings.ToLower(cfg.Format) {
 	case "json":
@@ -75,13 +75,13 @@ func NewLogger(cfg *config.LoggingConfig) *Logger {
 			TimestampFormat: time.RFC3339,
 		})
 	}
-	
+
 	// Configure output
 	setupOutput(logger, cfg)
-	
+
 	// Add hooks for additional functionality
 	setupHooks(logger, cfg)
-	
+
 	return &Logger{
 		Logger: logger,
 		config: cfg,
@@ -91,7 +91,7 @@ func NewLogger(cfg *config.LoggingConfig) *Logger {
 // setupOutput configures the logger output based on configuration
 func setupOutput(logger *logrus.Logger, cfg *config.LoggingConfig) {
 	var writers []io.Writer
-	
+
 	// Always include stdout/stderr
 	switch strings.ToLower(cfg.Output) {
 	case "stderr":
@@ -101,7 +101,7 @@ func setupOutput(logger *logrus.Logger, cfg *config.LoggingConfig) {
 	default:
 		writers = append(writers, os.Stdout)
 	}
-	
+
 	// Add file output if configured
 	if cfg.File.Enabled && cfg.File.Filename != "" {
 		// Ensure directory exists
@@ -111,15 +111,15 @@ func setupOutput(logger *logrus.Logger, cfg *config.LoggingConfig) {
 			// Configure log rotation
 			fileWriter := &lumberjack.Logger{
 				Filename:   cfg.File.Filename,
-				MaxSize:    cfg.File.MaxSize,    // MB
+				MaxSize:    cfg.File.MaxSize, // MB
 				MaxBackups: cfg.File.MaxBackups,
-				MaxAge:     cfg.File.MaxAge,     // days
+				MaxAge:     cfg.File.MaxAge, // days
 				Compress:   cfg.File.Compress,
 			}
 			writers = append(writers, fileWriter)
 		}
 	}
-	
+
 	// Set multi-writer output
 	if len(writers) > 1 {
 		logger.SetOutput(io.MultiWriter(writers...))
@@ -132,12 +132,12 @@ func setupOutput(logger *logrus.Logger, cfg *config.LoggingConfig) {
 func setupHooks(logger *logrus.Logger, cfg *config.LoggingConfig) {
 	// Add context hook for structured logging
 	logger.AddHook(&ContextHook{})
-	
+
 	// Add caller information if requested
 	if cfg.Structured {
 		logger.SetReportCaller(true)
 	}
-	
+
 	// Add remote logging hook if configured
 	if cfg.Remote.Enabled && cfg.Remote.Endpoint != "" {
 		hook := NewRemoteHook(cfg.Remote.Endpoint, cfg.Remote.Protocol)
@@ -148,7 +148,7 @@ func setupHooks(logger *logrus.Logger, cfg *config.LoggingConfig) {
 // WithContext returns a logger with context information
 func (l *Logger) WithContext(ctx context.Context) *logrus.Entry {
 	entry := l.Logger.WithContext(ctx)
-	
+
 	// Add trace information if available
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		entry = entry.WithFields(logrus.Fields{
@@ -156,27 +156,27 @@ func (l *Logger) WithContext(ctx context.Context) *logrus.Entry {
 			"span_id":  span.SpanContext().SpanID().String(),
 		})
 	}
-	
+
 	// Add request ID if available
 	if requestID := ctx.Value(ContextKeyRequestID); requestID != nil {
 		entry = entry.WithField("request_id", requestID)
 	}
-	
+
 	// Add E2 node ID if available
 	if nodeID := ctx.Value(ContextKeyE2NodeID); nodeID != nil {
 		entry = entry.WithField("e2_node_id", nodeID)
 	}
-	
+
 	// Add xApp ID if available
 	if xappID := ctx.Value(ContextKeyXAppID); xappID != nil {
 		entry = entry.WithField("xapp_id", xappID)
 	}
-	
+
 	// Add interface name if available
 	if interfaceName := ctx.Value(ContextKeyInterface); interfaceName != nil {
 		entry = entry.WithField("interface", interfaceName)
 	}
-	
+
 	return entry
 }
 
@@ -218,12 +218,12 @@ func (l *Logger) WithXApp(xappID string) *logrus.Entry {
 // LogE2Message logs E2 interface messages with structured information
 func (l *Logger) LogE2Message(direction string, nodeID string, messageType string, size int, latency time.Duration) {
 	l.WithFields(Fields{
-		"interface":     "e2",
-		"direction":     direction,
-		"e2_node_id":    nodeID,
-		"message_type":  messageType,
-		"message_size":  size,
-		"latency_ms":    latency.Milliseconds(),
+		"interface":    "e2",
+		"direction":    direction,
+		"e2_node_id":   nodeID,
+		"message_type": messageType,
+		"message_size": size,
+		"latency_ms":   latency.Milliseconds(),
 	}).Info("E2 message processed")
 }
 
@@ -236,11 +236,11 @@ func (l *Logger) LogA1Request(method string, path string, statusCode int, latenc
 		"status_code": statusCode,
 		"latency_ms":  latency.Milliseconds(),
 	})
-	
+
 	if userID != "" {
 		entry = entry.WithField("user_id", userID)
 	}
-	
+
 	if statusCode >= 400 {
 		entry.Warn("A1 request failed")
 	} else {
@@ -251,13 +251,13 @@ func (l *Logger) LogA1Request(method string, path string, statusCode int, latenc
 // LogO1Operation logs O1 interface operations with structured information
 func (l *Logger) LogO1Operation(operation string, target string, success bool, latency time.Duration) {
 	entry := l.WithFields(Fields{
-		"interface":   "o1",
-		"operation":   operation,
-		"target":      target,
-		"success":     success,
-		"latency_ms":  latency.Milliseconds(),
+		"interface":  "o1",
+		"operation":  operation,
+		"target":     target,
+		"success":    success,
+		"latency_ms": latency.Milliseconds(),
 	})
-	
+
 	if success {
 		entry.Info("O1 operation completed")
 	} else {
@@ -273,12 +273,12 @@ func (l *Logger) LogXAppLifecycle(xappID string, event string, status string, de
 		"event":     event,
 		"status":    status,
 	}
-	
+
 	// Add additional details
 	for k, v := range details {
 		fields[k] = v
 	}
-	
+
 	l.WithFields(fields).Info("xApp lifecycle event")
 }
 
@@ -292,11 +292,11 @@ func (l *Logger) LogSecurityEvent(eventType string, userID string, resource stri
 		"action":     action,
 		"success":    success,
 	})
-	
+
 	if reason != "" {
 		entry = entry.WithField("reason", reason)
 	}
-	
+
 	if success {
 		entry.Info("Security event")
 	} else {
@@ -312,12 +312,12 @@ func (l *Logger) LogPerformanceMetric(metric string, value float64, unit string,
 		"value":      value,
 		"unit":       unit,
 	}
-	
+
 	// Add tags
 	for k, v := range tags {
 		fields[fmt.Sprintf("tag_%s", k)] = v
 	}
-	
+
 	l.WithFields(fields).Info("Performance metric")
 }
 
@@ -334,18 +334,18 @@ func (hook *ContextHook) Fire(entry *logrus.Entry) error {
 	// Add timestamp in multiple formats for different consumers
 	entry.Data["timestamp_unix"] = entry.Time.Unix()
 	entry.Data["timestamp_nano"] = entry.Time.UnixNano()
-	
+
 	// Add service information
 	entry.Data["service"] = "near-rt-ric"
-	
+
 	// Add hostname
 	if hostname, err := os.Hostname(); err == nil {
 		entry.Data["hostname"] = hostname
 	}
-	
+
 	// Add process ID
 	entry.Data["pid"] = os.Getpid()
-	
+
 	return nil
 }
 
@@ -379,10 +379,10 @@ func (hook *RemoteHook) Fire(entry *logrus.Entry) error {
 	// Implementation would send log entry to remote endpoint
 	// This is a placeholder - in production, you'd implement
 	// the actual remote logging protocol (e.g., syslog, ELK, etc.)
-	
+
 	// For now, just add a marker that it would be sent remotely
 	entry.Data["remote_logged"] = true
-	
+
 	return nil
 }
 
@@ -400,7 +400,7 @@ func GetDefaultLogger() *Logger {
 			Enabled: false,
 		},
 	}
-	
+
 	return NewLogger(cfg)
 }
 

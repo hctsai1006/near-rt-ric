@@ -19,8 +19,8 @@ type E2Node struct {
 type NodeStatus string
 
 const (
-	NodeStatusConnected   NodeStatus = "Connected"
+	NodeStatusConnected    NodeStatus = "Connected"
 	NodeStatusDisconnected NodeStatus = "Disconnected"
-	NodeStatusOperational NodeStatus = "Operational"
-	NodeStatusFaulty      NodeStatus = "Faulty"
+	NodeStatusOperational  NodeStatus = "Operational"
+	NodeStatusFaulty       NodeStatus = "Faulty"
 )

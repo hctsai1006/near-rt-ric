@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-
-
 // YANG model utilities
 
 // ValidateYANGModel validates a YANG model definition
@@ -199,12 +197,12 @@ func ValidateSecurityRule(rule *SecurityRule) error {
 	if rule.Action == "" {
 		return fmt.Errorf("security rule action is required")
 	}
-	
+
 	validActions := map[string]bool{"allow": true, "deny": true, "log": true}
 	if !validActions[rule.Action] {
 		return fmt.Errorf("invalid security rule action: %s", rule.Action)
 	}
-	
+
 	return nil
 }
 
@@ -238,12 +236,12 @@ func ValidateSoftwareVersion(software *SoftwareVersion) error {
 	if software.Version == "" {
 		return fmt.Errorf("software version is required")
 	}
-	
+
 	validStatuses := map[string]bool{"active": true, "inactive": true, "corrupted": true}
 	if !validStatuses[software.Status] {
 		return fmt.Errorf("invalid software status: %s", software.Status)
 	}
-	
+
 	return nil
 }
 
@@ -255,12 +253,12 @@ func ValidateFileTransfer(transfer *FileTransfer) error {
 	if transfer.Operation == "" {
 		return fmt.Errorf("transfer operation is required")
 	}
-	
+
 	validOperations := map[string]bool{"upload": true, "download": true}
 	if !validOperations[transfer.Operation] {
 		return fmt.Errorf("invalid transfer operation: %s", transfer.Operation)
 	}
-	
+
 	if transfer.LocalPath == "" {
 		return fmt.Errorf("local path is required")
 	}
@@ -270,12 +268,12 @@ func ValidateFileTransfer(transfer *FileTransfer) error {
 	if transfer.Protocol == "" {
 		return fmt.Errorf("transfer protocol is required")
 	}
-	
+
 	validProtocols := map[string]bool{"sftp": true, "scp": true, "http": true, "https": true}
 	if !validProtocols[transfer.Protocol] {
 		return fmt.Errorf("invalid transfer protocol: %s", transfer.Protocol)
 	}
-	
+
 	return nil
 }
 
@@ -332,7 +330,7 @@ func ParseXMLPath(path string) []string {
 	if path == "" {
 		return nil
 	}
-	
+
 	// Simple path parsing - in production, use proper XPath parser
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	var result []string

@@ -12,36 +12,36 @@ import (
 type DependencyResolver struct {
 	lifecycleManager *LifecycleManager
 	logger           *logrus.Entry
-	
+
 	// Dependency graph
 	dependencyGraph map[XAppID][]XAppID
-	
+
 	// Service registry for dependency resolution
 	serviceRegistry map[string]*ServiceEndpoint
 }
 
 // ServiceEndpoint represents a service endpoint for dependency resolution
 type ServiceEndpoint struct {
-	Name         string                 `json:"name"`
-	Type         string                 `json:"type"` // xapp, service, database
-	Version      string                 `json:"version"`
-	Endpoint     string                 `json:"endpoint"`
-	Port         int32                  `json:"port"`
-	Protocol     string                 `json:"protocol"`
-	HealthCheck  string                 `json:"health_check"`
-	Metadata     map[string]interface{} `json:"metadata"`
-	ProvidedBy   XAppID                 `json:"provided_by"`
-	Available    bool                   `json:"available"`
+	Name        string                 `json:"name"`
+	Type        string                 `json:"type"` // xapp, service, database
+	Version     string                 `json:"version"`
+	Endpoint    string                 `json:"endpoint"`
+	Port        int32                  `json:"port"`
+	Protocol    string                 `json:"protocol"`
+	HealthCheck string                 `json:"health_check"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	ProvidedBy  XAppID                 `json:"provided_by"`
+	Available   bool                   `json:"available"`
 }
 
 // DependencyResolutionResult represents the result of dependency resolution
 type DependencyResolutionResult struct {
-	Success            bool                             `json:"success"`
-	ResolvedServices   map[string]*ServiceEndpoint     `json:"resolved_services"`
-	MissingDependencies []XAppDependency               `json:"missing_dependencies"`
-	ConflictingServices []string                       `json:"conflicting_services"`
-	CircularDependencies [][]XAppID                    `json:"circular_dependencies"`
-	ErrorMessage       string                          `json:"error_message"`
+	Success              bool                        `json:"success"`
+	ResolvedServices     map[string]*ServiceEndpoint `json:"resolved_services"`
+	MissingDependencies  []XAppDependency            `json:"missing_dependencies"`
+	ConflictingServices  []string                    `json:"conflicting_services"`
+	CircularDependencies [][]XAppID                  `json:"circular_dependencies"`
+	ErrorMessage         string                      `json:"error_message"`
 }
 
 // NewDependencyResolver creates a new dependency resolver
@@ -57,12 +57,12 @@ func NewDependencyResolver(lm *LifecycleManager, baseLogger *logrus.Logger) *Dep
 // ResolveDependencies resolves dependencies for an xApp
 func (dr *DependencyResolver) ResolveDependencies(xapp *XApp) error {
 	dr.logger.WithFields(logrus.Fields{
-		"xapp_id":           xapp.XAppID,
+		"xapp_id":            xapp.XAppID,
 		"dependencies_count": len(xapp.Dependencies),
 	}).Debug("Resolving xApp dependencies")
 
 	result := dr.resolveDependenciesInternal(xapp)
-	
+
 	if !result.Success {
 		return fmt.Errorf("dependency resolution failed: %s", result.ErrorMessage)
 	}
@@ -77,10 +77,10 @@ func (dr *DependencyResolver) ResolveDependencies(xapp *XApp) error {
 // resolveDependenciesInternal performs the actual dependency resolution
 func (dr *DependencyResolver) resolveDependenciesInternal(xapp *XApp) *DependencyResolutionResult {
 	result := &DependencyResolutionResult{
-		Success:             true,
-		ResolvedServices:    make(map[string]*ServiceEndpoint),
-		MissingDependencies: []XAppDependency{},
-		ConflictingServices: []string{},
+		Success:              true,
+		ResolvedServices:     make(map[string]*ServiceEndpoint),
+		MissingDependencies:  []XAppDependency{},
+		ConflictingServices:  []string{},
 		CircularDependencies: [][]XAppID{},
 	}
 
@@ -119,7 +119,7 @@ func (dr *DependencyResolver) resolveDependenciesInternal(xapp *XApp) *Dependenc
 			if existing.Version != resolved.Version {
 				result.ConflictingServices = append(result.ConflictingServices, dep.Name)
 				result.Success = false
-				result.ErrorMessage = fmt.Sprintf("Version conflict for service %s: %s vs %s", 
+				result.ErrorMessage = fmt.Sprintf("Version conflict for service %s: %s vs %s",
 					dep.Name, existing.Version, resolved.Version)
 			}
 		} else {
@@ -155,7 +155,7 @@ func (dr *DependencyResolver) resolveSingleDependency(dep XAppDependency) (*Serv
 func (dr *DependencyResolver) resolveXAppDependency(dep XAppDependency) (*ServiceEndpoint, error) {
 	// Check if the required xApp is already registered
 	xapps := dr.lifecycleManager.ListXApps()
-	
+
 	for _, xapp := range xapps {
 		if xapp.Name == dep.Name {
 			// Check version compatibility
@@ -194,14 +194,14 @@ func (dr *DependencyResolver) resolveServiceDependency(dep XAppDependency) (*Ser
 	// Check service registry
 	if service, exists := dr.serviceRegistry[dep.Name]; exists {
 		if dep.Version != "" && !dr.isVersionCompatible(service.Version, dep.Version) {
-			return nil, fmt.Errorf("service %s version %s not compatible with required %s", 
+			return nil, fmt.Errorf("service %s version %s not compatible with required %s",
 				dep.Name, service.Version, dep.Version)
 		}
-		
+
 		if !service.Available {
 			return nil, fmt.Errorf("service %s is not available", dep.Name)
 		}
-		
+
 		return service, nil
 	}
 
@@ -218,8 +218,8 @@ func (dr *DependencyResolver) resolveServiceDependency(dep XAppDependency) (*Ser
 func (dr *DependencyResolver) resolveDatabaseDependency(dep XAppDependency) (*ServiceEndpoint, error) {
 	// Check for database services in registry
 	for _, service := range dr.serviceRegistry {
-		if service.Type == "database" && 
-		   (service.Name == dep.Name || strings.Contains(service.Name, dep.Name)) {
+		if service.Type == "database" &&
+			(service.Name == dep.Name || strings.Contains(service.Name, dep.Name)) {
 			if dep.Version != "" && !dr.isVersionCompatible(service.Version, dep.Version) {
 				continue
 			}
@@ -244,7 +244,7 @@ func (dr *DependencyResolver) detectCircularDependencies(xappID XAppID, dependen
 	var circular [][]XAppID
 	visited := make(map[XAppID]bool)
 	recStack := make(map[XAppID]bool)
-	
+
 	// Build dependency map for this check
 	depMap := make(map[XAppID][]XAppID)
 	for _, dep := range dependencies {
@@ -259,7 +259,7 @@ func (dr *DependencyResolver) detectCircularDependencies(xappID XAppID, dependen
 			}
 		}
 	}
-	
+
 	// Merge with existing dependency graph
 	for k, v := range dr.dependencyGraph {
 		if existing, exists := depMap[k]; exists {
@@ -268,7 +268,7 @@ func (dr *DependencyResolver) detectCircularDependencies(xappID XAppID, dependen
 			depMap[k] = v
 		}
 	}
-	
+
 	// Check for cycles using DFS
 	if dr.hasCycleDFS(xappID, depMap, visited, recStack) {
 		// Reconstruct the cycle path (simplified)
@@ -278,14 +278,14 @@ func (dr *DependencyResolver) detectCircularDependencies(xappID XAppID, dependen
 		}
 		circular = append(circular, cycle)
 	}
-	
+
 	return circular
 }
 
 func (dr *DependencyResolver) hasCycleDFS(xappID XAppID, depMap map[XAppID][]XAppID, visited, recStack map[XAppID]bool) bool {
 	visited[xappID] = true
 	recStack[xappID] = true
-	
+
 	if deps, exists := depMap[xappID]; exists {
 		for _, dep := range deps {
 			if !visited[dep] {
@@ -297,14 +297,14 @@ func (dr *DependencyResolver) hasCycleDFS(xappID XAppID, depMap map[XAppID][]XAp
 			}
 		}
 	}
-	
+
 	recStack[xappID] = false
 	return false
 }
 
 func (dr *DependencyResolver) updateDependencyGraph(xapp *XApp) {
 	var deps []XAppID
-	
+
 	for _, dep := range xapp.Dependencies {
 		if dep.Type == "xapp" {
 			// Find xApp ID by name
@@ -317,14 +317,14 @@ func (dr *DependencyResolver) updateDependencyGraph(xapp *XApp) {
 			}
 		}
 	}
-	
+
 	dr.dependencyGraph[xapp.XAppID] = deps
 }
 
 func (dr *DependencyResolver) createEndpointFromXApp(xapp *XApp, instance *XAppInstance, interfaceName string) *ServiceEndpoint {
 	// Find the specified interface
 	var targetInterface interface{}
-	
+
 	// Check REST interfaces
 	for _, restIntf := range xapp.Interfaces.REST {
 		if interfaceName == "" || restIntf.Name == interfaceName {
@@ -332,7 +332,7 @@ func (dr *DependencyResolver) createEndpointFromXApp(xapp *XApp, instance *XAppI
 			break
 		}
 	}
-	
+
 	if targetInterface == nil {
 		// Check custom interfaces
 		for _, customIntf := range xapp.Interfaces.Custom {
@@ -342,11 +342,11 @@ func (dr *DependencyResolver) createEndpointFromXApp(xapp *XApp, instance *XAppI
 			}
 		}
 	}
-	
+
 	if targetInterface == nil {
 		return nil
 	}
-	
+
 	// Create endpoint based on interface type
 	switch intf := targetInterface.(type) {
 	case RESTInterface:
@@ -384,7 +384,7 @@ func (dr *DependencyResolver) createEndpointFromXApp(xapp *XApp, instance *XAppI
 			Available:  instance.Status == XAppStatusRunning,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -422,13 +422,13 @@ func (dr *DependencyResolver) resolveWellKnownService(dep XAppDependency) *Servi
 			Available:   true,
 		},
 	}
-	
+
 	if service, exists := wellKnownServices[dep.Name]; exists {
 		if dep.Version == "" || dr.isVersionCompatible(service.Version, dep.Version) {
 			return service
 		}
 	}
-	
+
 	return nil
 }
 
@@ -466,13 +466,13 @@ func (dr *DependencyResolver) createDefaultDatabaseEndpoint(dep XAppDependency) 
 			Available:   true,
 		},
 	}
-	
+
 	if db, exists := defaultDatabases[dep.Name]; exists {
 		if dep.Version == "" || dr.isVersionCompatible(db.Version, dep.Version) {
 			return db
 		}
 	}
-	
+
 	return nil
 }
 
@@ -482,20 +482,20 @@ func (dr *DependencyResolver) isVersionCompatible(available, required string) bo
 	if required == "" || available == "" {
 		return true
 	}
-	
+
 	// Exact match
 	if available == required {
 		return true
 	}
-	
+
 	// Major version compatibility (e.g., 1.x is compatible with 1.y)
 	availableParts := strings.Split(available, ".")
 	requiredParts := strings.Split(required, ".")
-	
+
 	if len(availableParts) > 0 && len(requiredParts) > 0 {
 		return availableParts[0] == requiredParts[0]
 	}
-	
+
 	return false
 }
 
@@ -508,7 +508,7 @@ func (dr *DependencyResolver) RegisterService(service *ServiceEndpoint) {
 
 func (dr *DependencyResolver) registerService(service *ServiceEndpoint) {
 	dr.serviceRegistry[service.Name] = service
-	
+
 	dr.logger.WithFields(logrus.Fields{
 		"service_name": service.Name,
 		"service_type": service.Type,
@@ -521,7 +521,7 @@ func (dr *DependencyResolver) registerService(service *ServiceEndpoint) {
 // UnregisterService removes a service from the registry
 func (dr *DependencyResolver) UnregisterService(serviceName string) {
 	delete(dr.serviceRegistry, serviceName)
-	
+
 	dr.logger.WithField("service_name", serviceName).Debug("Service unregistered")
 }
 
@@ -533,12 +533,12 @@ func (dr *DependencyResolver) GetAvailableServices() []*ServiceEndpoint {
 			services = append(services, service)
 		}
 	}
-	
+
 	// Sort by name for consistent ordering
 	sort.Slice(services, func(i, j int) bool {
 		return services[i].Name < services[j].Name
 	})
-	
+
 	return services
 }
 
@@ -567,7 +567,7 @@ func (dr *DependencyResolver) GetStats() map[string]interface{} {
 			availableCount++
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"total_services":     len(dr.serviceRegistry),
 		"available_services": availableCount,

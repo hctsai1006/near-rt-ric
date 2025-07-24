@@ -22,7 +22,7 @@ type RICSubscription struct {
 type SubscriptionStatus string
 
 const (
-	SubscriptionStatusActive  SubscriptionStatus = "Active"
+	SubscriptionStatusActive   SubscriptionStatus = "Active"
 	SubscriptionStatusInactive SubscriptionStatus = "Inactive"
-	SubscriptionStatusFailed  SubscriptionStatus = "Failed"
+	SubscriptionStatusFailed   SubscriptionStatus = "Failed"
 )

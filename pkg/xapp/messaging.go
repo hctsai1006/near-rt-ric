@@ -22,4 +22,3 @@ func (m *Messaging) Receive() (string, error) {
 	fmt.Println("Receiving message")
 	return "message", nil
 }
-

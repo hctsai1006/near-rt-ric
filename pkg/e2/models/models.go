@@ -33,8 +33,8 @@ const (
 type E2NodeType string
 
 const (
-	E2NodeTypeGNB       E2NodeType = "gNB"
-	E2NodeTypeUnknown   E2NodeType = "Unknown"
+	E2NodeTypeGNB     E2NodeType = "gNB"
+	E2NodeTypeUnknown E2NodeType = "Unknown"
 )
 
 type NodeStatus string
@@ -90,8 +90,8 @@ type RICsubscriptionDetails struct {
 
 // RICSubscriptionRequest represents a RIC subscription request.
 type RICSubscriptionRequest struct {
-	RICrequestID         *RICrequestID
-	RANfunctionID        int
+	RICrequestID           *RICrequestID
+	RANfunctionID          int
 	RICsubscriptionDetails *RICsubscriptionDetails
 }
 
@@ -133,20 +133,20 @@ type RICActionNotAdmitted struct {
 
 // RICSubscription represents a RIC subscription.
 type RICSubscription struct {
-	RequestID            RICrequestID
-	SubscriptionID       string
-	NodeID               string
-	RANFunctionID        int
-	SubscriptionDetails  RICsubscriptionDetails
-	Status               SubscriptionStatus
-	CreatedAt            time.Time
-	LastIndication       time.Time
-	ExpiresAt            *time.Time
-	Actions              []*RICaction
-	AdmittedActions      []int64
-	RejectedActions      []RICActionNotAdmitted
-	ErrorCount           int
-	IndicationsReceived  int
+	RequestID           RICrequestID
+	SubscriptionID      string
+	NodeID              string
+	RANFunctionID       int
+	SubscriptionDetails RICsubscriptionDetails
+	Status              SubscriptionStatus
+	CreatedAt           time.Time
+	LastIndication      time.Time
+	ExpiresAt           *time.Time
+	Actions             []*RICaction
+	AdmittedActions     []int64
+	RejectedActions     []RICActionNotAdmitted
+	ErrorCount          int
+	IndicationsReceived int
 }
 
 // IsExpired checks if the subscription is expired.
@@ -178,15 +178,15 @@ type E2APMessage struct {
 }
 
 type E2Node struct {
-	NodeID           string
-	NodeType         string
-	GlobalE2NodeID   *GlobalE2NodeID
-	RemoteAddress    string
-	Status           NodeStatus
-	LastHeartbeat    time.Time
-	LastActivity     time.Time
-	RANFunctions     []*RANfunction
-	ConnectedAt      time.Time
+	NodeID         string
+	NodeType       string
+	GlobalE2NodeID *GlobalE2NodeID
+	RemoteAddress  string
+	Status         NodeStatus
+	LastHeartbeat  time.Time
+	LastActivity   time.Time
+	RANFunctions   []*RANfunction
+	ConnectedAt    time.Time
 }
 
 type E2SetupResponse struct {
@@ -270,8 +270,8 @@ func (m E2MessageType) String() string {
 }
 
 type E2AP_PDU struct {
-	InitiatingMessage *InitiatingMessage `asn1:"choice:initiatingMessage,optional"`
-	SuccessfulOutcome *SuccessfulOutcome `asn1:"choice:successfulOutcome,optional"`
+	InitiatingMessage   *InitiatingMessage   `asn1:"choice:initiatingMessage,optional"`
+	SuccessfulOutcome   *SuccessfulOutcome   `asn1:"choice:successfulOutcome,optional"`
 	UnsuccessfulOutcome *UnsuccessfulOutcome `asn1:"choice:unsuccessfulOutcome,optional"`
 }
 
@@ -292,8 +292,6 @@ type UnsuccessfulOutcome struct {
 	Criticality   Criticality   `asn1:"value"`
 	Value         interface{}   `asn1:"choice:UnsuccessfulOutcome"`
 }
-
-
 
 var E2AP_PDU_TypeMaps = map[string]map[int64]reflect.Type{
 	"InitiatingMessage": {

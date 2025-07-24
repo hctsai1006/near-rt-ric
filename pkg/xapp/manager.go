@@ -12,20 +12,20 @@ import (
 
 // XAppManagerImpl implements the XAppManager interface
 type XAppManagerImpl struct {
-	repository    XAppRepository
-	orchestrator  XAppOrchestrator
-	registry      XAppRegistry
-	config        *XAppFrameworkConfig
-	logger        *logrus.Logger
-	ctx           context.Context
-	cancel        context.CancelFunc
-	
+	repository   XAppRepository
+	orchestrator XAppOrchestrator
+	registry     XAppRegistry
+	config       *XAppFrameworkConfig
+	logger       *logrus.Logger
+	ctx          context.Context
+	cancel       context.CancelFunc
+
 	// Internal state
-	instances     map[string]*XAppInstance
-	conflicts     map[string]*XAppConflict
-	eventSubs     map[string]chan *XAppEvent
-	mutex         sync.RWMutex
-	
+	instances map[string]*XAppInstance
+	conflicts map[string]*XAppConflict
+	eventSubs map[string]chan *XAppEvent
+	mutex     sync.RWMutex
+
 	// Monitoring
 	healthTicker  *time.Ticker
 	metricsTicker *time.Ticker
@@ -39,7 +39,7 @@ func NewXAppManager(
 	config *XAppFrameworkConfig,
 ) XAppManager {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	manager := &XAppManagerImpl{
 		repository:   repository,
 		orchestrator: orchestrator,
@@ -52,13 +52,13 @@ func NewXAppManager(
 		conflicts:    make(map[string]*XAppConflict),
 		eventSubs:    make(map[string]chan *XAppEvent),
 	}
-	
+
 	// Load existing instances from repository
 	manager.loadInstances()
-	
+
 	// Start monitoring
 	manager.startMonitoring()
-	
+
 	return manager
 }
 
@@ -99,7 +99,7 @@ func (mgr *XAppManagerImpl) Deploy(descriptor *XAppDescriptor, config map[string
 		if err != nil {
 			return nil, fmt.Errorf("conflict detection failed: %w", err)
 		}
-		
+
 		if len(conflicts) > 0 {
 			return nil, fmt.Errorf("deployment blocked by conflicts: %d conflicts detected", len(conflicts))
 		}
@@ -265,10 +265,10 @@ func (mgr *XAppManagerImpl) Restart(xappID string) error {
 	if err := mgr.Stop(xappID); err != nil {
 		return err
 	}
-	
+
 	// Wait a moment before restarting
 	time.Sleep(2 * time.Second)
-	
+
 	return mgr.Start(xappID)
 }
 
@@ -725,11 +725,11 @@ func (mgr *XAppManagerImpl) resolveResourceConflict(conflict *XAppConflict) erro
 // Cleanup stops the manager and cleans up resources
 func (mgr *XAppManagerImpl) Cleanup() {
 	mgr.cancel()
-	
+
 	if mgr.healthTicker != nil {
 		mgr.healthTicker.Stop()
 	}
-	
+
 	if mgr.metricsTicker != nil {
 		mgr.metricsTicker.Stop()
 	}

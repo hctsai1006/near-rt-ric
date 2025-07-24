@@ -21,8 +21,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/hctsai1006/near-rt-ric/pkg/a1"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2"
 	"github.com/hctsai1006/near-rt-ric/pkg/xapp"
 )
 
@@ -101,11 +101,11 @@ func KafkaTestContainer(t *testing.T, ctx context.Context) *TestContainer {
 		Image:        "confluentinc/cp-kafka:7.4.0",
 		ExposedPorts: []string{"9092/tcp"},
 		Env: map[string]string{
-			"KAFKA_BROKER_ID":                 "1",
-			"KAFKA_ZOOKEEPER_CONNECT":         "localhost:2181",
-			"KAFKA_ADVERTISED_LISTENERS":      "PLAINTEXT://localhost:9092",
+			"KAFKA_BROKER_ID":                        "1",
+			"KAFKA_ZOOKEEPER_CONNECT":                "localhost:2181",
+			"KAFKA_ADVERTISED_LISTENERS":             "PLAINTEXT://localhost:9092",
 			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
-			"KAFKA_AUTO_CREATE_TOPICS_ENABLE": "true",
+			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":        "true",
 		},
 		WaitingFor: wait.ForListeningPort("9092/tcp").WithStartupTimeout(120 * time.Second),
 	}
@@ -142,7 +142,7 @@ func (tc *TestContainer) Cleanup(ctx context.Context) error {
 func LoadTestFixture(t *testing.T, filename string, target interface{}) {
 	fixturesDir := filepath.Join("test", "fixtures")
 	filePath := filepath.Join(fixturesDir, filename)
-	
+
 	data, err := os.ReadFile(filePath)
 	require.NoError(t, err, "Failed to read fixture file: %s", filename)
 
@@ -191,12 +191,12 @@ func GenerateTestCertificates(t *testing.T) (certPEM, keyPEM []byte) {
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
-		DNSNames:     []string{"localhost", "test-server"},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1)},
+		DNSNames:    []string{"localhost", "test-server"},
 	}
 
 	// Generate certificate
@@ -225,7 +225,7 @@ func GenerateTestCertificates(t *testing.T) (certPEM, keyPEM []byte) {
 func WaitForPort(host string, port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	address := fmt.Sprintf("%s:%d", host, port)
-	
+
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", address, time.Second)
 		if err == nil {
@@ -234,7 +234,7 @@ func WaitForPort(host string, port int, timeout time.Duration) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	return fmt.Errorf("port %s not available after %v", address, timeout)
 }
 
@@ -249,11 +249,11 @@ func WaitForHTTPEndpoint(url string, timeout time.Duration) error {
 func CreateTempDir(t *testing.T, prefix string) string {
 	dir, err := os.MkdirTemp("", prefix)
 	require.NoError(t, err)
-	
+
 	t.Cleanup(func() {
 		os.RemoveAll(dir)
 	})
-	
+
 	return dir
 }
 
@@ -333,7 +333,7 @@ func CreateRICSubscriptionRequest(requestorID, instanceID, transactionID uint32,
 // CreateRICControlRequest creates a test RIC Control Request
 func CreateRICControlRequest(requestorID, instanceID, transactionID uint32, ranFunctionID uint32) *e2.RICControlRequest {
 	return &e2.RICControlRequest{
-		TransactionID:     transactionID,
+		TransactionID: transactionID,
 		RequestID: e2.RICRequestID{
 			RequestorID: requestorID,
 			InstanceID:  instanceID,

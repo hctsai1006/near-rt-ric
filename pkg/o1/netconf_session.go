@@ -12,21 +12,21 @@ import (
 
 // NETCONF protocol constants
 const (
-	NetconfBase10 = "urn:ietf:params:netconf:base:1.0"
-	NetconfBase11 = "urn:ietf:params:netconf:base:1.1"
-	NetconfHelloTag = "hello"
-	NetconfRPCTag = "rpc"
-	NetconfReplyTag = "rpc-reply"
+	NetconfBase10          = "urn:ietf:params:netconf:base:1.0"
+	NetconfBase11          = "urn:ietf:params:netconf:base:1.1"
+	NetconfHelloTag        = "hello"
+	NetconfRPCTag          = "rpc"
+	NetconfReplyTag        = "rpc-reply"
 	NetconfNotificationTag = "notification"
-	NetconfEndDelimiter = "]]>]]>"
+	NetconfEndDelimiter    = "]]>]]>"
 )
 
 // NETCONF message framing types
 type FramingType int
 
 const (
-	FramingEOM FramingType = iota // End-of-message framing (NETCONF 1.0)
-	FramingChunked                // Chunked framing (NETCONF 1.1)
+	FramingEOM     FramingType = iota // End-of-message framing (NETCONF 1.0)
+	FramingChunked                    // Chunked framing (NETCONF 1.1)
 )
 
 // sendHello sends NETCONF hello message
@@ -99,7 +99,7 @@ func (nsh *NetconfSessionHandler) receiveHello() error {
 
 	nsh.logger.WithFields(logrus.Fields{
 		"client_capabilities": len(clientCaps),
-		"session_id":         nsh.session.SessionID,
+		"session_id":          nsh.session.SessionID,
 	}).Info("Client hello received")
 
 	// Determine framing type based on capabilities

@@ -68,20 +68,20 @@ func NewFCAPSManager(cfg *config.O1Config, baseLogger *logrus.Logger, metrics *m
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &FCAPSManager{
-		config:              cfg,
-		logger:              baseLogger.WithField("component", "fcaps-manager"),
-		metrics:             metrics,
-		alarms:              make(map[string]*Alarm),
-		configurations:      make(map[string]*ConfigurationChange),
-		datastores:          make(map[DatastoreType]map[string]interface{}),
-		performanceMetrics:  make(map[string]*PerformanceMetric),
-		performanceReports:  make(map[string]*PerformanceReport),
-		securityPolicies:    make(map[string]*SecurityPolicy),
-		certificates:        make(map[string]*Certificate),
-		fileTransfers:       make(map[string]*FileTransfer),
-		softwareInventory:   &SoftwareInventory{},
-		ctx:                 ctx,
-		cancel:              cancel,
+		config:             cfg,
+		logger:             baseLogger.WithField("component", "fcaps-manager"),
+		metrics:            metrics,
+		alarms:             make(map[string]*Alarm),
+		configurations:     make(map[string]*ConfigurationChange),
+		datastores:         make(map[DatastoreType]map[string]interface{}),
+		performanceMetrics: make(map[string]*PerformanceMetric),
+		performanceReports: make(map[string]*PerformanceReport),
+		securityPolicies:   make(map[string]*SecurityPolicy),
+		certificates:       make(map[string]*Certificate),
+		fileTransfers:      make(map[string]*FileTransfer),
+		softwareInventory:  &SoftwareInventory{},
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 }
 
@@ -527,11 +527,11 @@ func (fm *FCAPSManager) StartFileTransfer(operation, localPath, remotePath, prot
 	fm.fileTransfers[transfer.TransferID] = transfer
 
 	fm.logger.WithFields(logrus.Fields{
-		"transfer_id":  transfer.TransferID,
-		"operation":    operation,
-		"local_path":   localPath,
-		"remote_path":  remotePath,
-		"protocol":     protocol,
+		"transfer_id": transfer.TransferID,
+		"operation":   operation,
+		"local_path":  localPath,
+		"remote_path": remotePath,
+		"protocol":    protocol,
 	}).Info("File transfer started")
 
 	// Simulate file transfer completion (in production, implement actual transfer)

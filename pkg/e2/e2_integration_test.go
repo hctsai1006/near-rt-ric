@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package e2
@@ -112,8 +113,8 @@ func TestE2Integration(t *testing.T) {
 	t.Run("TestSubscription", func(t *testing.T) {
 		// Subscription Procedure
 		subscriptionReq := &models.RICSubscriptionRequest{
-			RICrequestID:         &models.RICrequestID{RICrequestorID: 1, RICinstanceID: 1},
-			RANfunctionID:        1,
+			RICrequestID:           &models.RICrequestID{RICrequestorID: 1, RICinstanceID: 1},
+			RANfunctionID:          1,
 			RICsubscriptionDetails: &models.RICsubscriptionDetails{},
 		}
 		encodedReq, err := EncodeSubscriptionRequest(subscriptionReq)

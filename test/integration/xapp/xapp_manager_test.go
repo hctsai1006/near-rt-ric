@@ -21,8 +21,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/xapp"
 	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
+	"github.com/hctsai1006/near-rt-ric/pkg/xapp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -271,9 +271,9 @@ func (suite *XAppIntegrationTestSuite) TestXAppDeployment() {
 	suite.TestXAppRegistration()
 
 	deploymentSpec := map[string]interface{}{
-		"xapp_name":    "test-xapp",
+		"xapp_name":     "test-xapp",
 		"instance_name": "test-xapp-instance-001",
-		"namespace":    "xapp-test",
+		"namespace":     "xapp-test",
 		"config": map[string]interface{}{
 			"log_level":  "debug",
 			"batch_size": 50,
@@ -400,8 +400,8 @@ func (suite *XAppIntegrationTestSuite) TestXAppConfigurationUpdate() {
 	suite.TestXAppDeployment()
 
 	configUpdate := map[string]interface{}{
-		"log_level":  "error",
-		"batch_size": 200,
+		"log_level":   "error",
+		"batch_size":  200,
 		"new_setting": "test_value",
 	}
 

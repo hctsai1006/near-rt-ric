@@ -204,9 +204,9 @@ func (suite *A1IntegrationTestSuite) authenticateTestUser() {
 func (suite *A1IntegrationTestSuite) TestPolicyTypeManagement() {
 	// Create a policy type
 	policyType := map[string]interface{}{
-		"policy_type_id": 1,
-		"name":           "Test Policy Type",
-		"description":    "Policy type for testing",
+		"policy_type_id":      1,
+		"name":                "Test Policy Type",
+		"description":         "Policy type for testing",
 		"policy_type_version": "1.0.0",
 		"create_schema": map[string]interface{}{
 			"$schema": "http://json-schema.org/draft-07/schema#",
@@ -227,7 +227,7 @@ func (suite *A1IntegrationTestSuite) TestPolicyTypeManagement() {
 							"type": "object",
 							"properties": map[string]interface{}{
 								"gbr": map[string]interface{}{
-									"type": "integer",
+									"type":    "integer",
 									"minimum": 0,
 								},
 							},
@@ -326,11 +326,11 @@ func (suite *A1IntegrationTestSuite) TestPolicyStatusUpdates() {
 
 	// Update policy status
 	statusUpdate := map[string]interface{}{
-		"policy_id":     "policy-001",
-		"status":        "ENFORCED",
-		"reason":        "Policy successfully enforced",
+		"policy_id":        "policy-001",
+		"status":           "ENFORCED",
+		"reason":           "Policy successfully enforced",
 		"has_been_deleted": false,
-		"deleted":       false,
+		"deleted":          false,
 	}
 
 	body, _ := json.Marshal(statusUpdate)
@@ -396,14 +396,14 @@ func (suite *A1IntegrationTestSuite) TestEnrichmentInformationService() {
 
 	// Create enrichment information job
 	eiJob := map[string]interface{}{
-		"ei_job_id":       "location-job-001",
-		"ei_type_id":      "location-info",
-		"job_owner":       "policy-service",
+		"ei_job_id":  "location-job-001",
+		"ei_type_id": "location-info",
+		"job_owner":  "policy-service",
 		"job_definition": map[string]interface{}{
-			"area_of_interest":   "cell-001",
+			"area_of_interest":  "cell-001",
 			"tracking_accuracy": 100,
 		},
-		"job_result_uri": "http://policy-service/api/v1/location-updates",
+		"job_result_uri":          "http://policy-service/api/v1/location-updates",
 		"status_notification_uri": "http://policy-service/api/v1/job-status",
 	}
 
@@ -624,7 +624,7 @@ func (suite *A1IntegrationTestSuite) TestA1Performance() {
 	duration := time.Since(start)
 
 	// Performance assertions
-	assert.Less(suite.T(), errors, numRequests/10) // Less than 10% error rate
+	assert.Less(suite.T(), errors, numRequests/10)   // Less than 10% error rate
 	assert.Less(suite.T(), duration, 60*time.Second) // Complete within 60 seconds
 
 	suite.T().Logf("Performance test: %d requests in %v, %d errors", numRequests, duration, errors)

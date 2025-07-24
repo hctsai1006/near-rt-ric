@@ -195,12 +195,12 @@ func (xi *XAppInterface) RegisterXApp(xapp *XApp) error {
 	result := xi.dependencyResolver.ValidateDependencies(xapp)
 	if !result.Success {
 		err := fmt.Errorf("dependency validation failed: %s", result.ErrorMessage)
-		
+
 		// Send event
 		for _, handler := range xi.eventHandlers {
 			go handler.OnDependencyResolutionFailed(xapp.XAppID, err)
 		}
-		
+
 		return err
 	}
 
@@ -359,12 +359,12 @@ func (xi *XAppInterface) monitoringWorker() {
 func (xi *XAppInterface) collectFrameworkMetrics() {
 	// Collect framework-level metrics
 	stats := xi.GetStats()
-	
+
 	// Update Prometheus metrics
 	if totalXApps, ok := stats["total_xapps"].(int); ok {
 		xi.metrics.XAppMetrics.XAppsTotal.WithLabelValues("all").Set(float64(totalXApps))
 	}
-	
+
 	if totalInstances, ok := stats["total_instances"].(int); ok {
 		xi.metrics.XAppMetrics.InstancesTotal.Set(float64(totalInstances))
 	}
@@ -384,7 +384,7 @@ func (xi *XAppInterface) collectFrameworkMetrics() {
 func (xi *XAppInterface) setupEventHandlers() {
 	// Set up lifecycle manager event handler
 	xi.lifecycleManager.AddEventHandler(&xappInterfaceEventHandler{xi})
-	
+
 	// Set up health monitor event handler
 	xi.healthMonitor.AddEventHandler(&xappInterfaceHealthEventHandler{xi})
 }
@@ -395,8 +395,8 @@ type xappInterfaceEventHandler struct {
 	xi *XAppInterface
 }
 
-func (h *xappInterfaceEventHandler) OnXAppCreated(xapp *XApp) {}
-func (h *xappInterfaceEventHandler) OnXAppUpdated(xapp *XApp) {}
+func (h *xappInterfaceEventHandler) OnXAppCreated(xapp *XApp)    {}
+func (h *xappInterfaceEventHandler) OnXAppUpdated(xapp *XApp)    {}
 func (h *xappInterfaceEventHandler) OnXAppDeleted(xappID XAppID) {}
 
 func (h *xappInterfaceEventHandler) OnInstanceCreated(instance *XAppInstance) {}
@@ -417,15 +417,18 @@ func (h *xappInterfaceEventHandler) OnInstanceFailed(instance *XAppInstance, err
 
 func (h *xappInterfaceEventHandler) OnInstanceDeleted(instanceID XAppInstanceID) {}
 
-func (h *xappInterfaceEventHandler) OnHealthChanged(instanceID XAppInstanceID, oldState, newState HealthState) {}
+func (h *xappInterfaceEventHandler) OnHealthChanged(instanceID XAppInstanceID, oldState, newState HealthState) {
+}
 
 type xappInterfaceHealthEventHandler struct {
 	xi *XAppInterface
 }
 
 func (h *xappInterfaceHealthEventHandler) OnHealthCheckStarted(instanceID XAppInstanceID) {}
-func (h *xappInterfaceHealthEventHandler) OnHealthCheckCompleted(instanceID XAppInstanceID, result *HealthCheckResult) {}
-func (h *xappInterfaceHealthEventHandler) OnHealthStateChanged(instanceID XAppInstanceID, oldState, newState HealthState) {}
+func (h *xappInterfaceHealthEventHandler) OnHealthCheckCompleted(instanceID XAppInstanceID, result *HealthCheckResult) {
+}
+func (h *xappInterfaceHealthEventHandler) OnHealthStateChanged(instanceID XAppInstanceID, oldState, newState HealthState) {
+}
 
 func (h *xappInterfaceHealthEventHandler) OnHealthCheckFailed(instanceID XAppInstanceID, err error) {
 	for _, handler := range h.xi.eventHandlers {
@@ -454,17 +457,17 @@ func (xi *XAppInterface) GetStats() map[string]interface{} {
 	dependencyStats := xi.dependencyResolver.GetStats()
 
 	return map[string]interface{}{
-		"running":            xi.IsRunning(),
-		"uptime":             time.Since(xi.startTime),
-		"deployment_engine":  xi.config.Manager.DeploymentEngine,
-		"lifecycle_stats":    lifecycleStats,
-		"health_stats":       healthStats,
-		"dependency_stats":   dependencyStats,
-		"total_xapps":        lifecycleStats["total_xapps"],
-		"total_instances":    lifecycleStats["total_instances"],
-		"running_instances":  lifecycleStats["running_instances"],
-		"stopped_instances":  lifecycleStats["stopped_instances"],
-		"failed_instances":   lifecycleStats["failed_instances"],
+		"running":           xi.IsRunning(),
+		"uptime":            time.Since(xi.startTime),
+		"deployment_engine": xi.config.Manager.DeploymentEngine,
+		"lifecycle_stats":   lifecycleStats,
+		"health_stats":      healthStats,
+		"dependency_stats":  dependencyStats,
+		"total_xapps":       lifecycleStats["total_xapps"],
+		"total_instances":   lifecycleStats["total_instances"],
+		"running_instances": lifecycleStats["running_instances"],
+		"stopped_instances": lifecycleStats["stopped_instances"],
+		"failed_instances":  lifecycleStats["failed_instances"],
 	}
 }
 
@@ -484,4 +487,3 @@ func (xi *XAppInterface) HealthCheck() error {
 
 	return nil
 }
-

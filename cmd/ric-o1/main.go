@@ -18,11 +18,11 @@ const (
 )
 
 var (
-	listenAddr = flag.String("listen-addr", "0.0.0.0", "Listen address for O1 interface")
-	listenPort = flag.Int("listen-port", 830, "Listen port for O1 interface")
-	logLevel   = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	listenAddr  = flag.String("listen-addr", "0.0.0.0", "Listen address for O1 interface")
+	listenPort  = flag.Int("listen-port", 830, "Listen port for O1 interface")
+	logLevel    = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	showVersion = flag.Bool("version", false, "Show version information")
-	yangDir    = flag.String("yang-dir", "yang", "Directory containing YANG models")
+	yangDir     = flag.String("yang-dir", "yang", "Directory containing YANG models")
 )
 
 func main() {

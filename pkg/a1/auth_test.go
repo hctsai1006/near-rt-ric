@@ -71,13 +71,13 @@ func TestAuthMiddleware(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "InvalidToken",
-			token: "invalid-token",
+			name:           "InvalidToken",
+			token:          "invalid-token",
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
-			name: "NoAuthHeader",
-			token: "",
+			name:           "NoAuthHeader",
+			token:          "",
 			expectedStatus: http.StatusUnauthorized,
 		},
 		{
@@ -124,27 +124,27 @@ func TestAuthorization(t *testing.T) {
 		expectedStatus int
 	}{
 		{
-			name: "AdminAccess",
-			roles: []string{"admin"},
-			requiredRole: AdminRole,
+			name:           "AdminAccess",
+			roles:          []string{"admin"},
+			requiredRole:   AdminRole,
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "OperatorAccessDenied",
-			roles: []string{"operator"},
-			requiredRole: AdminRole,
+			name:           "OperatorAccessDenied",
+			roles:          []string{"operator"},
+			requiredRole:   AdminRole,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name: "NoRoles",
-			roles: []string{},
-			requiredRole: AdminRole,
+			name:           "NoRoles",
+			roles:          []string{},
+			requiredRole:   AdminRole,
 			expectedStatus: http.StatusForbidden,
 		},
 		{
-			name: "ViewerAccessToViewer",
-			roles: []string{"viewer"},
-			requiredRole: ViewerRole,
+			name:           "ViewerAccessToViewer",
+			roles:          []string{"viewer"},
+			requiredRole:   ViewerRole,
 			expectedStatus: http.StatusOK,
 		},
 	}

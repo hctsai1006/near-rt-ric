@@ -160,7 +160,7 @@ func TestDatastoreLocking(t *testing.T) {
 	t.Run("Lock after unlock", func(t *testing.T) {
 		err := ds.Lock("running", sessionID2)
 		assert.NoError(t, err)
-		
+
 		// Clean up
 		ds.Unlock("running", sessionID2)
 	})
