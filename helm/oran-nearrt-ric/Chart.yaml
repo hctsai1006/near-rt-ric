@@ -1,9 +1,10 @@
 apiVersion: v2
 name: oran-nearrt-ric
-description: O-RAN Near Real-Time RAN Intelligent Controller Platform
+description: A Helm chart for O-RAN Near-RT RIC
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 0.1.0
+appVersion: "1.16.0"
+icon: https://www.o-ran.org/images/o-ran-logo.png
 home: https://github.com/your-org/near-rt-ric
 sources:
   - https://github.com/your-org/near-rt-ric

@@ -655,7 +655,7 @@ func (lm *LifecycleManager) sendEvent(eventType string, xappID XAppID, instanceI
 				}
 			case EventInstanceFailed:
 				if instance, err := lm.GetInstance(instanceID); err == nil {
-					h.OnInstanceFailed(instance, fmt.Errorf(message))
+					h.OnInstanceFailed(instance, fmt.Errorf("%s", message))
 				}
 			case EventInstanceDeleted:
 				h.OnInstanceDeleted(instanceID)

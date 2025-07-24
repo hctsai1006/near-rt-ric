@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package a1_test
 
 import (
@@ -22,7 +25,6 @@ import (
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/hctsai1006/near-rt-ric/pkg/a1"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/sirupsen/logrus"
 )
 
@@ -161,8 +163,6 @@ func (suite *A1IntegrationTestSuite) setupA1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 
-	metrics := monitoring.NewMetricsCollector()
-
 	cfg := &config.A1Config{
 		ListenAddress: "127.0.0.1",
 		ListenPort:    8080,
@@ -182,12 +182,12 @@ func (suite *A1IntegrationTestSuite) setupA1Interface() {
 		LogLevel: "debug",
 	}
 
-	var err error
-	suite.a1Interface, err = a1.NewA1Interface(cfg, logger, metrics)
-	require.NoError(suite.T(), err)
+	repo := a1.NewMemoryRepository()
+	validator := a1.NewA1PolicyValidator()
+	suite.a1Interface = a1.NewA1Interface(cfg, logger, repo, validator)
 
 	// Start A1 interface
-	err = suite.a1Interface.Start(suite.ctx)
+	err := suite.a1Interface.Start(suite.ctx)
 	require.NoError(suite.T(), err)
 
 	// Wait for interface to be ready

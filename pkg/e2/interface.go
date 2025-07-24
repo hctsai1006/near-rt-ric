@@ -1,6 +1,7 @@
 package e2
 
 import (
+	"context"
 	"net"
 	"time"
 
@@ -19,7 +20,7 @@ func NewE2Interface(addr string) *E2Interface {
 }
 
 // Start starts the E2 interface listener.
-func (e *E2Interface) Start() error {
+func (e *E2Interface) Start(ctx context.Context) error {
 	// Dummy implementation: using TCP for now as SCTP is not in stdlib
 	// and the goal is to make the tests compile and pass.
 	var err error

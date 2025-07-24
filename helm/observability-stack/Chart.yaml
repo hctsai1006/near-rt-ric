@@ -1,9 +1,10 @@
 apiVersion: v2
 name: observability-stack
-description: Production-grade O-RAN observability pipeline with Grafana, Elasticsearch, and Kafka
+description: A Helm chart for the observability stack
 type: application
-version: 1.0.0
-appVersion: "latest"
+version: 0.1.0
+appVersion: "1.0.0"
+icon: https://www.o-ran.org/images/o-ran-logo.png
 keywords:
   - observability
   - monitoring
@@ -55,10 +56,6 @@ dependencies:
     version: "26.4.3"
     repository: "https://charts.bitnami.com/bitnami"
     condition: kafka.enabled
-  - name: kafka-connect
-    version: "0.1.0"
-    repository: "file://./charts/kafka-connect"
-    condition: kafkaConnect.enabled
   # Jaeger for Distributed Tracing
   - name: jaeger
     version: "0.71.14"

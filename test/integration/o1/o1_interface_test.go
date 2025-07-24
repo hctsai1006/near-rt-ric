@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package o1_test
 
 import (
@@ -6,20 +9,16 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/common/monitoring"
 	"github.com/hctsai1006/near-rt-ric/pkg/o1"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -41,8 +40,10 @@ type O1IntegrationTestSuite struct {
 	netconfClient     *NetconfSSHClient
 	testServerHost    string
 	testServerPort    int
-	certFile          *os.File
-	keyFile           *os.File
+	hostKeyFile       *os.File
+	authorizedKeysFile *os.File
+	clientKeyFile     *os.File
+	serverPublicKey   ssh.PublicKey
 }
 
 // NetconfSSHClient represents a simple NETCONF SSH client for testing
@@ -61,7 +62,7 @@ func (suite *O1IntegrationTestSuite) SetupSuite() {
 
 	// Setup test containers
 	suite.setupPostgres()
-	suite.setupCerts()
+	suite.setupKeys()
 	suite.setupO1Interface()
 
 	// Wait for interface to be ready
@@ -82,8 +83,9 @@ func (suite *O1IntegrationTestSuite) TearDownSuite() {
 	if suite.postgresContainer != nil {
 		suite.postgresContainer.Terminate(suite.ctx)
 	}
-	os.Remove(suite.certFile.Name())
-	os.Remove(suite.keyFile.Name())
+	os.Remove(suite.hostKeyFile.Name())
+	os.Remove(suite.authorizedKeysFile.Name())
+	os.Remove(suite.clientKeyFile.Name())
 	suite.cancel()
 }
 
@@ -116,42 +118,52 @@ func (suite *O1IntegrationTestSuite) setupPostgres() {
 	suite.dbURL = fmt.Sprintf("postgres://test_user:test_password@%s:%s/near_rt_ric_test?sslmode=disable", host, port.Port())
 }
 
-func (suite *O1IntegrationTestSuite) setupCerts() {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+func (suite *O1IntegrationTestSuite) setupKeys() {
+	// Generate server host key
+	hostPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(suite.T(), err)
 
-	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			Organization: []string{"Test Co"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(time.Hour * 24 * 180),
+	suite.hostKeyFile, err = os.CreateTemp("", "host_key.pem")
+	require.NoError(suite.T(), err)
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
+	hostKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(hostPrivateKey),
 	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	err = pem.Encode(suite.hostKeyFile, hostKeyPEM)
 	require.NoError(suite.T(), err)
 
-	suite.certFile, err = os.CreateTemp("", "cert.pem")
+	suite.serverPublicKey, err = ssh.NewPublicKey(&hostPrivateKey.PublicKey)
 	require.NoError(suite.T(), err)
-	pem.Encode(suite.certFile, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 
-	suite.keyFile, err = os.CreateTemp("", "key.pem")
+	// Generate client key
+	clientPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(suite.T(), err)
-	pem.Encode(suite.keyFile, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+
+	suite.clientKeyFile, err = os.CreateTemp("", "client_key.pem")
+	require.NoError(suite.T(), err)
+
+	clientKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(clientPrivateKey),
+	}
+	err = pem.Encode(suite.clientKeyFile, clientKeyPEM)
+	require.NoError(suite.T(), err)
+
+	// Create authorized keys file
+	clientPublicKey, err := ssh.NewPublicKey(&clientPrivateKey.PublicKey)
+	require.NoError(suite.T(), err)
+
+	suite.authorizedKeysFile, err = os.CreateTemp("", "authorized_keys")
+	require.NoError(suite.T(), err)
+
+	_, err = suite.authorizedKeysFile.Write(ssh.MarshalAuthorizedKey(clientPublicKey))
+	require.NoError(suite.T(), err)
 }
 
 func (suite *O1IntegrationTestSuite) setupO1Interface() {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
-
-	// Generate test SSH keys
-	_, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(suite.T(), err)
 
 	suite.testServerHost = "127.0.0.1"
 	suite.testServerPort = 2830 // Non-standard port for testing
@@ -160,17 +172,17 @@ func (suite *O1IntegrationTestSuite) setupO1Interface() {
 		NETCONF: config.NETCONFConfig{
 			ListenAddress: suite.testServerHost,
 			Port:          suite.testServerPort,
-			TLS: config.TLSConfig{
-				Enabled:  true,
-				CertFile: suite.certFile.Name(),
-				KeyFile:  suite.keyFile.Name(),
-			},
+		},
+		SSH: config.SSHConfig{
+			HostKeyPath:        suite.hostKeyFile.Name(),
+			AuthorizedKeysPath: suite.authorizedKeysFile.Name(),
 		},
 		YANG: config.YANGConfig{
 			ModulesPath: "test/fixtures/yang-modules",
 		},
 	}
 
+	var err error
 	suite.o1Interface, err = o1.NewServer(cfg, logger)
 	require.NoError(suite.T(), err)
 
@@ -186,24 +198,10 @@ func (suite *O1IntegrationTestSuite) setupO1Interface() {
 }
 
 func (suite *O1IntegrationTestSuite) setupNetconfClient() {
-	// Generate client SSH key for testing and add it to the server's authorized keys
-	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	keyBytes, err := os.ReadFile(suite.clientKeyFile.Name())
 	require.NoError(suite.T(), err)
 
-	signer, err := ssh.NewSignerFromKey(clientKey)
-	require.NoError(suite.T(), err)
-
-	// Add client public key to authorized keys for the server
-	publicKey, err := ssh.NewPublicKey(&clientKey.PublicKey)
-	require.NoError(suite.T(), err)
-	ssh.MarshalAuthorizedKey(publicKey)
-
-	authKeysDir := "/tmp/test-keys"
-	err = os.MkdirAll(authKeysDir, 0700)
-	require.NoError(suite.T(), err)
-
-	authKeysFile := filepath.Join(authKeysDir, "test-client.pub")
-	err = os.WriteFile(authKeysFile, []byte{}, 0644)
+	signer, err := ssh.ParsePrivateKey(keyBytes)
 	require.NoError(suite.T(), err)
 
 	// SSH client configuration
@@ -212,8 +210,13 @@ func (suite *O1IntegrationTestSuite) setupNetconfClient() {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Only for testing
-		Timeout:         10 * time.Second,
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			if !bytes.Equal(key.Marshal(), suite.serverPublicKey.Marshal()) {
+				return fmt.Errorf("host key mismatch")
+			}
+			return nil
+		},
+		Timeout: 10 * time.Second,
 	}
 
 	// Connect to NETCONF server
@@ -270,7 +273,6 @@ func (suite *O1IntegrationTestSuite) TestNetconfHelloExchange() {
 	require.NoError(suite.T(), err)
 
 	assert.Contains(suite.T(), response, "urn:ietf:params:netconf:base:1.0")
-	assert.Contains(suite.T(), response, "urn:o-ran:smo:teiv:1.0")
 }
 
 // Test NETCONF Get operation

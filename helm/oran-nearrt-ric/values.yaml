@@ -16,6 +16,9 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+global:
+  imageRegistry: ""
+
 replicaCount: 1
 
 image:
@@ -37,6 +40,11 @@ mainDashboard:
     repository: ghcr.io/near-rt-ric/dashboard
     tag: "latest"
     pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: false
 
 xappDashboard:
   enabled: true
@@ -44,6 +52,11 @@ xappDashboard:
     repository: ghcr.io/near-rt-ric/xapp-dashboard
     tag: "latest"
     pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: false
 
 imagePullSecrets: []
 nameOverride: ""
@@ -247,3 +260,12 @@ security:
   rateLimiting:
     enabled: true
     requestsPerMinute: 1000
+
+networkPolicies:
+  enabled: false
+
+certs:
+  tlsSecretName: "oran-nearrt-ric-tls"
+
+federatedLearning:
+  enabled: false

@@ -1,0 +1,30 @@
+dependencies:
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 7.3.11
+- name: prometheus
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 25.8.2
+- name: loki
+  repository: https://grafana.github.io/helm-charts
+  version: 5.36.2
+- name: promtail
+  repository: https://grafana.github.io/helm-charts
+  version: 6.15.3
+- name: elasticsearch
+  repository: https://helm.elastic.co
+  version: 8.5.1
+- name: kibana
+  repository: https://helm.elastic.co
+  version: 8.5.1
+- name: logstash
+  repository: https://helm.elastic.co
+  version: 8.5.1
+- name: kafka
+  repository: https://charts.bitnami.com/bitnami
+  version: 26.4.3
+- name: jaeger
+  repository: https://jaegertracing.github.io/helm-charts
+  version: 0.71.14
+digest: sha256:3e8d397ae950b90b65fe157c3c489177ca51b21dd4aad2268dda8104b00a7669
+generated: "2025-07-25T01:15:33.8788262+08:00"

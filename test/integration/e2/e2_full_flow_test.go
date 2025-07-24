@@ -1,70 +1,128 @@
-package e2
+//go:build linux
+// +build linux
+
+package e2_test
 
 import (
+	"net"
 	"testing"
-	"time"
 
 	"github.com/hctsai1006/near-rt-ric/pkg/e2"
+	"github.com/hctsai1006/near-rt-ric/pkg/e2/models"
+	"github.com/ishidawataru/sctp"
+	"github.com/onosproject/onos-lib-go/pkg/asn1/aper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestE2FullFlow(t *testing.T) {
-	// Server setup
-	serverTransport := &e2.SCTPTransport{}
-	err := serverTransport.Listen()
-	require.NoError(t, err, "server should listen without error")
-	defer serverTransport.listener.Close()
+	// SCTP server setup
+	addr, err := sctp.ResolveSCTPAddr("sctp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ln, err := sctp.ListenSCTP("sctp", addr)
+	require.NoError(t, err)
+	defer ln.Close()
 
-	// Client setup
-	clientTransport := &e2.SCTPTransport{}
-
-	// Simulate a client connecting to the server
 	go func() {
-		conn, err := serverTransport.listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
-			return // Test will fail on timeout or other error
+			return
 		}
-		serverTransport.connections["test-node"] = conn.(*sctp.SCTPConn)
+		defer conn.Close()
+
+		for {
+			buf := make([]byte, 1500)
+			n, err := conn.Read(buf)
+			if err != nil {
+				return
+			}
+
+			var pdu models.E2AP_PDU
+			err = aper.Unmarshal(buf[:n], &pdu, nil, models.E2AP_PDU_TypeMaps)
+			if err != nil {
+				return
+			}
+
+			if pdu.InitiatingMessage != nil {
+				switch pdu.InitiatingMessage.ProcedureCode {
+				case models.ProcedureCodeE2Setup:
+					resp := &models.E2SetupResponse{
+						TransactionID: 1,
+					}
+					encodedResp, err := e2.EncodeE2SetupResponse(resp)
+					if err != nil {
+						return
+					}
+					conn.Write(encodedResp)
+				case models.ProcedureCodeRICSubscription:
+					resp := &models.RICSubscriptionResponse{
+						RICRequestID: models.RICrequestID{
+							RICrequestorID: 1,
+							RICinstanceID:  1,
+						},
+					}
+					encodedResp, err := e2.EncodeRICSubscriptionResponse(resp)
+					if err != nil {
+						return
+					}
+					conn.Write(encodedResp)
+				}
+			}
+		}
 	}()
 
-	// Client connects
-	addr, err := sctp.ResolveSCTPAddr("sctp", "127.0.0.1:36421")
+	// Client
+	clientAddr := ln.Addr()
+	clientConn, err := sctp.DialSCTP("sctp", nil, clientAddr.(*sctp.SCTPAddr))
 	require.NoError(t, err)
-	conn, err := sctp.DialSCTP("sctp", nil, addr)
-	require.NoError(t, err)
-	clientTransport.connections["server"] = conn
+	defer clientConn.Close()
 
-	// 1. E2 Setup Request
-	setupReq := &e2.E2SetupRequest{TransactionID: 1}
-	encodedSetupReq, err := e2.EncodeE2SetupRequest(setupReq)
-	require.NoError(t, err)
+	t.Run("TestE2Setup", func(t *testing.T) {
+		// E2 Setup Procedure
+		setupReq := &models.E2SetupRequest{
+			TransactionID: 1,
+		}
+		encodedReq, err := e2.EncodeE2SetupRequest(setupReq)
+		require.NoError(t, err)
 
-	err = clientTransport.SendMessage("server", encodedSetupReq, 0)
-	require.NoError(t, err)
+		_, err = clientConn.Write(encodedReq)
+		require.NoError(t, err)
 
-	// Server receives and decodes
-	buffer := make([]byte, 1024)
-	n, _, err := serverTransport.connections["test-node"].SCTPRead(buffer, nil)
-	require.NoError(t, err)
-	decodedSetupReq, err := e2.DecodeE2AP_PDU(buffer[:n])
-	require.NoError(t, err)
-	assert.NotNil(t, decodedSetupReq.Value.E2SetupRequest)
-	assert.Equal(t, int64(1), decodedSetupReq.Value.E2SetupRequest.TransactionID)
+		// Read response
+		buf := make([]byte, 1500)
+		n, err := clientConn.Read(buf)
+		require.NoError(t, err)
+		assert.True(t, n > 0)
 
-	// 2. RIC Subscription Request
-	subReq := &e2.RICsubscriptionRequest{TransactionID: 2}
-	encodedSubReq, err := e2.EncodeSubscriptionRequest(subReq)
-	require.NoError(t, err)
+		// Decode and validate response
+		setupResp, err := e2.DecodeE2SetupResponse(buf[:n])
+		require.NoError(t, err)
+		assert.NotNil(t, setupResp)
+		assert.Equal(t, int64(1), setupResp.TransactionID)
+	})
 
-	err = clientTransport.SendMessage("server", encodedSubReq, 1)
-	require.NoError(t, err)
+	t.Run("TestSubscription", func(t *testing.T) {
+		// Subscription Procedure
+		subscriptionReq := &models.RICSubscriptionRequest{
+			RICrequestID: &models.RICrequestID{RICrequestorID: 1, RICinstanceID: 1},
+		}
+		encodedReq, err := e2.EncodeSubscriptionRequest(subscriptionReq)
+		require.NoError(t, err)
 
-	// Server receives and decodes
-	n, _, err = serverTransport.connections["test-node"].SCTPRead(buffer, nil)
-	require.NoError(t, err)
-	decodedSubReq, err := e2.DecodeE2AP_PDU(buffer[:n])
-	require.NoError(t, err)
-	assert.NotNil(t, decodedSubReq.Value.RICsubscriptionRequest)
-	assert.Equal(t, int64(2), decodedSubReq.Value.RICsubscriptionRequest.TransactionID)
+		_, err = clientConn.Write(encodedReq)
+		require.NoError(t, err)
+
+		// Read response
+		buf := make([]byte, 1500)
+		n, err := clientConn.Read(buf)
+		require.NoError(t, err)
+		assert.True(t, n > 0)
+
+		// Decode and validate response
+		subResp, err := e2.DecodeRICSubscriptionResponse(buf[:n])
+		require.NoError(t, err)
+		assert.NotNil(t, subResp)
+		assert.Equal(t, 1, subResp.RICRequestID.RICrequestorID)
+		assert.Equal(t, 1, subResp.RICRequestID.RICinstanceID)
+	})
 }

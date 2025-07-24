@@ -72,7 +72,7 @@ func main() {
 	e2if := e2.NewE2Interface(fmt.Sprintf("%s:%d", *ricAddr, *ricPort))
 
 	// Start E2 interface
-	if err := e2if.Start(); err != nil {
+	if err := e2if.Start(context.Background()); err != nil {
 		logger.WithError(err).Fatal("Failed to start E2 interface")
 	}
 	defer e2if.Stop()

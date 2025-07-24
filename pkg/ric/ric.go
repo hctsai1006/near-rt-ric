@@ -74,7 +74,7 @@ func (s *RICServer) initializeInterfaces(logger *logrus.Entry) error {
 
 	repo := a1.NewMemoryRepository()
 	validator := a1.NewA1PolicyValidator()
-	s.a1Interface = a1.NewA1Interface(logger.Logger, repo, validator)
+	s.a1Interface = a1.NewA1Interface(s.config.A1, s.logger, repo, validator)
 
 	s.o1Handler, err = o1.NewO1Handler(s.config.O1, logger.Logger)
 	if err != nil {
@@ -88,11 +88,11 @@ func (s *RICServer) initializeInterfaces(logger *logrus.Entry) error {
 func (s *RICServer) Start() error {
 	s.logger.Info("Starting O-RAN Near-RT RIC server")
 
-	g, _ := errgroup.WithContext(s.ctx)
+	g, ctx := errgroup.WithContext(s.ctx)
 
 	g.Go(func() error {
 		s.logger.Info("Starting E2 interface")
-		return s.e2Interface.Start()
+		return s.e2Interface.Start(ctx)
 	})
 
 	g.Go(func() error {

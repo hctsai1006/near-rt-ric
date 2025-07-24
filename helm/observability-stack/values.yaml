@@ -316,16 +316,13 @@ promtail:
 
 # Elasticsearch for Advanced Log Analytics
 elasticsearch:
-  enabled: true
+  enabled: false
   replicas: 1
   minimumMasterNodes: 1
   esMajorVersion: ""
   clusterName: "o-ran-logs"
   nodeGroup: "master"
-  roles:
-    master: "true"
-    ingest: "true"
-    data: "true"
+  roles: {}
   resources:
     requests:
       cpu: "500m"
@@ -371,13 +368,13 @@ kibana:
 
 # Kafka for Real-time Data Streaming
 kafka:
-  enabled: true
+  enabled: false
   replicaCount: 1
   persistence:
     enabled: true
     size: 8Gi
   zookeeper:
-    enabled: true
+    enabled: false
     replicaCount: 1
     persistence:
       enabled: true

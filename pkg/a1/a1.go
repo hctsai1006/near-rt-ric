@@ -1,10 +1,14 @@
 package a1
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/hctsai1006/near-rt-ric/internal/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -13,14 +17,51 @@ type A1Interface struct {
 	logger     *logrus.Logger
 	repository A1Repository
 	validator  A1PolicyValidator
+	server     *http.Server
+	router     *mux.Router
+	config     *config.A1Config
 }
 
 // NewA1Interface creates a new A1 interface.
-func NewA1Interface(logger *logrus.Logger, repo A1Repository, validator A1PolicyValidator) *A1Interface {
+func NewA1Interface(cfg *config.A1Config, logger *logrus.Logger, repo A1Repository, validator A1PolicyValidator) *A1Interface {
+	router := mux.NewRouter()
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.ListenAddress, cfg.ListenPort),
+		Handler: router,
+	}
 	return &A1Interface{
 		logger:     logger,
 		repository: repo,
 		validator:  validator,
+		server:     server,
+		router:     router,
+		config:     cfg,
+	}
+}
+
+// Start starts the A1 interface.
+func (a *A1Interface) Start(ctx context.Context) error {
+	authMiddleware, err := NewAuthMiddleware(&a.config.Auth)
+	if err != nil {
+		return err
+	}
+	handler := NewA1Handler(a, authMiddleware)
+	handler.RegisterRoutes(a.router)
+
+	go func() {
+		if err := a.server.ListenAndServe(); err != http.ErrServerClosed {
+			a.logger.WithError(err).Error("A1 interface server failed")
+		}
+	}()
+	return nil
+}
+
+// Stop stops the A1 interface.
+func (a *A1Interface) Stop(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := a.server.Shutdown(ctx); err != nil {
+		a.logger.WithError(err).Error("A1 interface server shutdown failed")
 	}
 }
 
@@ -43,12 +84,12 @@ func (h *A1Handler) RegisterRoutes(router *mux.Router) {
 	s := router.PathPrefix("/api/v1").Subrouter()
 	s.Use(h.authMiddleware.Middleware)
 
-	s.Handle("/policy_types", Authorize(http.HandlerFunc(h.getPolicyTypes), ViewerRole)).Methods("GET")
-	s.Handle("/policy_types/{policy_type_id}", Authorize(http.HandlerFunc(h.getPolicyType), ViewerRole)).Methods("GET")
-	s.Handle("/policies", Authorize(http.HandlerFunc(h.getPolicies), ViewerRole)).Methods("GET")
-	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.createPolicy), OperatorRole)).Methods("PUT")
-	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.getPolicy), ViewerRole)).Methods("GET")
-	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.deletePolicy), AdminRole)).Methods("DELETE")
+	s.Handle("/policy_types", Authorize(http.HandlerFunc(h.getPolicyTypes), "viewer")).Methods("GET")
+	s.Handle("/policy_types/{policy_type_id}", Authorize(http.HandlerFunc(h.getPolicyType), "viewer")).Methods("GET")
+	s.Handle("/policies", Authorize(http.HandlerFunc(h.getPolicies), "viewer")).Methods("GET")
+	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.createPolicy), "operator")).Methods("PUT")
+	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.getPolicy), "viewer")).Methods("GET")
+	s.Handle("/policies/{policy_id}", Authorize(http.HandlerFunc(h.deletePolicy), "admin")).Methods("DELETE")
 }
 
 func (h *A1Handler) getPolicyTypes(w http.ResponseWriter, r *http.Request) {

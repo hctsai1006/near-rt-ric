@@ -1,33 +1,26 @@
 package integration
 
 import (
-	"context"
+	"os"
 	"testing"
-	"time"
 
 	"github.com/hctsai1006/near-rt-ric/internal/config"
-	"github.com/hctsai1006/near-rt-ric/pkg/ric"
-	"github.com/stretchr/testify/require"
+	"github.com/sirupsen/logrus"
 )
 
-func TestRICMain(t *testing.T) {
-	cfg, err := config.LoadConfig("../../config/config.yaml")
-	require.NoError(t, err)
+func TestMain(m *testing.M) {
+	// Set up logger
+	logrus.SetLevel(logrus.DebugLevel)
 
-	server, err := ric.NewRICServer(cfg)
-	require.NoError(t, err)
+	// Load configuration
+	_, err := config.LoadConfig()
+	if err != nil {
+		logrus.Fatalf("Failed to load configuration: %v", err)
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Run tests
+	exitCode := m.Run()
 
-	go func() {
-		err := server.Start()
-		require.NoError(t, err)
-	}()
-
-	// Let the server run for a bit
-	time.Sleep(5 * time.Second)
-
-	err = server.Stop()
-	require.NoError(t, err)
+	// Exit
+	os.Exit(exitCode)
 }

@@ -24,7 +24,7 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 
 {{/*
-Create chart-md name and version as used by the chart-md label.
+Create chart name and version as used by the chart label.
 */}}
 {{- define "oran-nearrt-ric.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
@@ -60,3 +60,10 @@ Create the name of the service account to use
 {{- default "default" .Values.rbac.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Define the namespace
+*/}}
+{{- define "oran-nearrt-ric.namespace" -}}
+{{- .Release.Namespace }}
+{{- end -}}

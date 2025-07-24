@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("failed to create auth middleware: %v", err)
 	}
 
-	a1Interface := a1.NewA1Interface(logger, repo, validator)
+	a1Interface := a1.NewA1Interface(a1Config, logger, repo, validator)
 	a1Handler := a1.NewA1Handler(a1Interface, authMiddleware)
 
 	router := mux.NewRouter()

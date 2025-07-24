@@ -58,7 +58,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", *listenAddr, *listenPort)
 	e2Interface := e2.NewE2Interface(addr)
 
-	if err := e2Interface.Start(); err != nil {
+	if err := e2Interface.Start(context.Background()); err != nil {
 		logger.WithError(err).Fatal("Failed to start E2 interface")
 	}
 

@@ -29,44 +29,7 @@ type Server struct {
 }
 
 // NewServer creates a new NETCONF server
-func NewServer(logger *logrus.Logger, rpcHandler RPCHandler) (*Server, error) {
-	config := &ssh.ServerConfig{
-		// In a real implementation, you would use a more secure way to handle keys
-		// and you would implement proper authentication.
-		NoClientAuth: true,
-	}
-
-	// In a real implementation, you would load a host key from a file.
-	privateBytes := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACBbB7CshY25n5A6rJzsc5a2a/vmdCFinskiD4E/g0i5IAAAAIiP9OMIj/Tj
-CAAAAAtzc2gtZWQyNTUxOQAAACBbB7CshY25n5A6rJzsc5a2a/vmdCFinskiD4E/g0i5IA
-AAAECbO5kL2V8aLp3E4+s4iSgTOfM4s3k2c2p9e4g9e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3
-e-mail:test@test.com
------END OPENSSH PRIVATE KEY-----`)
-	private, err := ssh.ParsePrivateKey(privateBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-	config.AddHostKey(private)
-
+func NewServer(logger *logrus.Logger, rpcHandler RPCHandler, config *ssh.ServerConfig) (*Server, error) {
 	return &Server{
 		logger:     logger,
 		config:     config,
@@ -86,6 +49,10 @@ func (s *Server) Start(addr string) error {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
+			// Check if the listener was closed
+			if s.listener == nil {
+				return nil
+			}
 			return fmt.Errorf("failed to accept connection: %w", err)
 		}
 		go s.handleConnection(conn)
@@ -94,7 +61,10 @@ func (s *Server) Start(addr string) error {
 
 // Stop stops the NETCONF server
 func (s *Server) Stop() {
-	s.listener.Close()
+	if s.listener != nil {
+		s.listener.Close()
+		s.listener = nil
+	}
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
