@@ -626,12 +626,12 @@ func (fm *FCAPSManager) checkSystemHealth() {
 	fm.securityMutex.RLock()
 	for _, cert := range fm.certificates {
 		if cert.DaysUntilExpiry() <= 30 && cert.DaysUntilExpiry() > 0 {
-			fm.RaiseAlarm("certificate-expiry", "security", "fcaps-manager",
+			_, _ = fm.RaiseAlarm("certificate-expiry", "security", "fcaps-manager",
 				AlarmWarning, "certificate-expiry",
 				fmt.Sprintf("Certificate %s expires in %d days", cert.CommonName, cert.DaysUntilExpiry()),
 				"")
 		} else if cert.IsExpired() {
-			fm.RaiseAlarm("certificate-expired", "security", "fcaps-manager",
+			_, _ = fm.RaiseAlarm("certificate-expired", "security", "fcaps-manager",
 				AlarmMajor, "certificate-expired",
 				fmt.Sprintf("Certificate %s has expired", cert.CommonName),
 				"")
@@ -642,10 +642,10 @@ func (fm *FCAPSManager) checkSystemHealth() {
 
 func (fm *FCAPSManager) collectSystemMetrics() {
 	// Collect basic system metrics
-	fm.CollectPerformanceMetric("cpu_usage", "near-rt-ric", "gauge", 45.2, "%", nil)
-	fm.CollectPerformanceMetric("memory_usage", "near-rt-ric", "gauge", 78.5, "%", nil)
-	fm.CollectPerformanceMetric("disk_usage", "near-rt-ric", "gauge", 34.1, "%", nil)
-	fm.CollectPerformanceMetric("network_throughput", "near-rt-ric", "gauge", 1024.5, "MB/s", nil)
+	_, _ = fm.CollectPerformanceMetric("cpu_usage", "near-rt-ric", "gauge", 45.2, "%", nil)
+	_, _ = fm.CollectPerformanceMetric("memory_usage", "near-rt-ric", "gauge", 78.5, "%", nil)
+	_, _ = fm.CollectPerformanceMetric("disk_usage", "near-rt-ric", "gauge", 34.1, "%", nil)
+	_, _ = fm.CollectPerformanceMetric("network_throughput", "near-rt-ric", "gauge", 1024.5, "MB/s", nil)
 }
 
 func (fm *FCAPSManager) performMaintenance() {

@@ -114,7 +114,7 @@ func (xi *XAppInterface) Start(ctx context.Context) error {
 
 	// Start health monitor
 	if err := xi.healthMonitor.Start(ctx); err != nil {
-		xi.lifecycleManager.Stop(ctx)
+		_ = xi.lifecycleManager.Stop(ctx)
 		return fmt.Errorf("failed to start health monitor: %w", err)
 	}
 

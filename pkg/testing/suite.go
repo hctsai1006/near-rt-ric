@@ -219,13 +219,13 @@ func (suite *IntegrationTestSuite) TearDownSuite() {
 
 	// Stop containers
 	if suite.postgresContainer != nil {
-		suite.postgresContainer.Terminate(suite.ctx)
+		_ = suite.postgresContainer.Terminate(suite.ctx)
 	}
 	if suite.redisContainer != nil {
-		suite.redisContainer.Terminate(suite.ctx)
+		_ = suite.redisContainer.Terminate(suite.ctx)
 	}
 	if suite.kafkaContainer != nil {
-		suite.kafkaContainer.Terminate(suite.ctx)
+		_ = suite.kafkaContainer.Terminate(suite.ctx)
 	}
 
 	// Cancel context

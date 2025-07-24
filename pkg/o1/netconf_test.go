@@ -163,7 +163,7 @@ func TestNetconfServerDuplicateStart(t *testing.T) {
 	assert.Contains(t, err.Error(), "already running")
 
 	// Cleanup
-	server.Stop(context.Background())
+	_ = server.Stop(context.Background())
 }
 
 func TestNetconfServerStats(t *testing.T) {

@@ -493,6 +493,6 @@ func (nsh *NetconfSessionHandler) parseKillSessionRequest(operationXML string) u
 
 	sessionIDStr := operationXML[start+12 : start+end]
 	var sessionID uint32
-	fmt.Sscanf(sessionIDStr, "%d", &sessionID)
+	_, _ = fmt.Sscanf(sessionIDStr, "%d", &sessionID)
 	return sessionID
 }

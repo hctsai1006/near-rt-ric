@@ -99,7 +99,7 @@ func (h *A1Handler) getPolicyTypes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(policyTypes)
+	_ = json.NewEncoder(w).Encode(policyTypes)
 }
 
 func (h *A1Handler) getPolicyType(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +112,7 @@ func (h *A1Handler) getPolicyType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(policyType)
+	_ = json.NewEncoder(w).Encode(policyType)
 }
 
 func (h *A1Handler) getPolicies(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (h *A1Handler) getPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(policies)
+	_ = json.NewEncoder(w).Encode(policies)
 }
 
 func (h *A1Handler) createPolicy(w http.ResponseWriter, r *http.Request) {

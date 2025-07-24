@@ -170,7 +170,7 @@ func GenerateTestE2Messages() map[string]interface{} {
 			]
 		}
 	}`
-	json.Unmarshal([]byte(fixtureData), &messages)
+	_ = json.Unmarshal([]byte(fixtureData), &messages)
 	return messages
 }
 

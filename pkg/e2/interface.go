@@ -55,7 +55,7 @@ func (e *E2Interface) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	// Dummy handler
 	buf := make([]byte, 1024)
-	conn.Read(buf)
+	_, _ = conn.Read(buf)
 	// In a real implementation, we would decode the message and send a response.
 	// For the test, the client part is what matters.
 }

@@ -392,17 +392,30 @@ func (ns *NetconfServer) handleSSHConnection(conn net.Conn) {
 
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
-			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 			continue
 		}
-
 		channel, requests, err := newChannel.Accept()
 		if err != nil {
-			ns.logger.WithError(err).Error("Failed to accept channel")
-			continue
+			ns.logger.WithError(err).Error("Could not accept channel")
+			return
 		}
 
-		go ns.handleNetconfSession(channel, requests, sshConn.User(), conn.RemoteAddr().String())
+		go func(in <-chan *ssh.Request) {
+			for req := range in {
+				if req.Type == "subsystem" && string(req.Payload[4:]) == "netconf" {
+					if req.WantReply {
+						_ = req.Reply(true, nil)
+					}
+				} else {
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+				}
+			}
+		}(requests)
+
+		go ns.handleNetconfSession(channel, requests, sshConn.User(), sshConn.RemoteAddr().String())
 	}
 }
 

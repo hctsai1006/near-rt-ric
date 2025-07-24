@@ -162,6 +162,6 @@ func TestDatastoreLocking(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Clean up
-		ds.Unlock("running", sessionID2)
+		_ = ds.Unlock("running", sessionID2)
 	})
 }

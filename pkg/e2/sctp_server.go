@@ -431,7 +431,7 @@ func (s *SCTPServer) handleConnectionReceive(conn *SCTPConnection) {
 			return
 		default:
 			// Set read deadline for heartbeat detection
-			conn.conn.SetReadDeadline(time.Now().Add(s.config.HeartbeatInterval * 3))
+			_ = conn.conn.SetReadDeadline(time.Now().Add(s.config.HeartbeatInterval * 3))
 
 			n, err := conn.conn.Read(conn.receiveBuffer)
 			if err != nil {
@@ -503,7 +503,7 @@ func (s *SCTPServer) handleConnectionSend(conn *SCTPConnection) {
 			}
 
 			// Set write deadline
-			conn.conn.SetWriteDeadline(time.Now().Add(s.config.ConnectionTimeout))
+			_ = conn.conn.SetWriteDeadline(time.Now().Add(s.config.ConnectionTimeout))
 
 			n, err := conn.conn.Write(data)
 			if err != nil {

@@ -82,7 +82,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
-			newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
+			_ = newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
 			continue
 		}
 		channel, requests, err := newChannel.Accept()
@@ -94,9 +94,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		go func(in <-chan *ssh.Request) {
 			for req := range in {
 				if req.Type == "subsystem" && string(req.Payload[4:]) == "netconf" {
-					req.Reply(true, nil)
+					_ = req.Reply(true, nil)
 				} else {
-					req.Reply(false, nil)
+					_ = req.Reply(false, nil)
 				}
 			}
 		}(requests)

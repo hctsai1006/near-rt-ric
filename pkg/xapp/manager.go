@@ -628,15 +628,17 @@ func (mgr *XAppManagerImpl) publishEvent(instanceID XAppInstanceID, eventType XA
 	}
 
 	// Publish to subscribers
-	mgr.mutex.RLock()
-	for _, eventChan := range mgr.eventSubs {
-		select {
-		case eventChan <- event:
-		default:
-			// Channel is full, skip this subscriber
+	go func() {
+		mgr.mutex.RLock()
+		defer mgr.mutex.RUnlock()
+		for _, eventChan := range mgr.eventSubs {
+			select {
+			case eventChan <- event:
+			default:
+				// Channel is full, skip this subscriber
+			}
 		}
-	}
-	mgr.mutex.RUnlock()
+	}()
 }
 
 func (mgr *XAppManagerImpl) detectPotentialConflicts(descriptor *XAppDescriptor) ([]*XAppConflict, error) {
